@@ -22,6 +22,7 @@ var expectedIDs = []string{
 	"openai", "azure_openai", "anthropic", "gemini",
 	"openrouter", "litellm", "requesty", "pinecone",
 	"jina", "nvidia", "novita", "gpustack", "cohere",
+	"gaoshanyunji",
 }
 
 func TestMinimaxOfficialDefaultURLs(t *testing.T) {
@@ -84,8 +85,8 @@ func TestBuiltinDefaultURLsAcrossModelTypes(t *testing.T) {
 }
 
 func TestAllVendorsRegistered(t *testing.T) {
-	if len(expectedIDs) != 30 {
-		t.Fatalf("expected 30 vendor ids in the spec, got %d", len(expectedIDs))
+	if len(expectedIDs) != 31 {
+		t.Fatalf("expected 31 vendor ids in the spec, got %d", len(expectedIDs))
 	}
 	for _, id := range expectedIDs {
 		v, ok := modelruntime.Get(id)

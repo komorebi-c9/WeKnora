@@ -1502,6 +1502,237 @@ func (s *userService) RefreshToken(
 	return s.GenerateTokens(ctx, user)
 }
 
+// Token types as persisted in auth_tokens.token_type.
+const (
+	authTokenTypeAccess  = "access_token"
+	authTokenTypeRefresh = "refresh_token"
+)
+
+// Defaults used when EnsureUserToken has to provision the account itself.
+// Every on-demand account shares this synthetic email domain and the fixed
+// bootstrap password so callers only need to know the username.
+const (
+	ensureTokenEmailDomain = "@logosdata.com"
+	ensureTokenPassword    = "luoge123"
+)
+
+// EnsureUserToken returns a valid access token for the account identified by
+// username, wrapped in the same login-shaped payload POST /auth/login
+// returns. The contract is "always answer with a usable token" for an active
+// account, resolved in this order:
+//
+//  1. The account does not exist yet: it is auto-registered with
+//     username=username, email=username+ensureTokenEmailDomain and
+//     password=ensureTokenPassword (see ensureUserForToken).
+//  2. A stored, unrevoked, unexpired access token still passes ValidateToken:
+//     it is returned unchanged, so repeat calls are idempotent and do not
+//     pile up sessions.
+//  3. Otherwise the newest usable refresh token is spent exactly like
+//     POST /auth/refresh would, rotating the pair.
+//  4. Otherwise (no usable refresh token either — e.g. after logout) a fresh
+//     pair is minted.
+//
+// provisioning is the caller-resolved tenant policy for an auto-created
+// account; an empty value keeps Register's create_personal default.
+func (s *userService) EnsureUserToken(
+	ctx context.Context,
+	username string,
+	provisioning types.TenantProvisioningMode,
+) (*types.LoginResponse, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, errors.New("username is required")
+	}
+
+	user, err := s.ensureUserForToken(ctx, username, provisioning)
+	if err != nil {
+		logger.Errorf(ctx, "EnsureUserToken: resolve user failed: %v", err)
+		return nil, err
+	}
+	if !user.IsActive {
+		logger.Warnf(ctx, "EnsureUserToken: account %s is disabled", user.ID)
+		return &types.LoginResponse{Success: false, Message: "Account is disabled"}, nil
+	}
+
+	// 1. Reuse the still-valid access token when there is one.
+	if accessToken, tenantID, ok := s.validAccessToken(ctx, user); ok {
+		refreshToken, _ := s.newestValidToken(ctx, user.ID, authTokenTypeRefresh)
+		return s.loginResponseForToken(ctx, user, accessToken, refreshToken, tenantID,
+			"Token is still valid"), nil
+	}
+
+	// 2. Roll the newest usable refresh token forward, mirroring /auth/refresh.
+	if refreshToken, ok := s.newestValidToken(ctx, user.ID, authTokenTypeRefresh); ok {
+		accessToken, newRefreshToken, refreshErr := s.RefreshToken(ctx, refreshToken)
+		if refreshErr == nil {
+			return s.loginResponseForToken(ctx, user, accessToken, newRefreshToken,
+				s.tenantIDForAccessToken(ctx, accessToken, user), "Token refreshed successfully"), nil
+		}
+		// A revoked/expired-but-unnoticed refresh token must not fail the
+		// request: fall through to minting a fresh pair below.
+		logger.Warnf(ctx, "EnsureUserToken: refresh for user %s failed, minting new tokens: %v",
+			user.ID, refreshErr)
+	}
+
+	// 3. Nothing reusable left: issue a fresh pair.
+	accessToken, refreshToken, err := s.GenerateTokens(ctx, user)
+	if err != nil {
+		logger.Errorf(ctx, "EnsureUserToken: token generation failed for user %s: %v", user.ID, err)
+		return nil, err
+	}
+	return s.loginResponseForToken(ctx, user, accessToken, refreshToken,
+		s.tenantIDForAccessToken(ctx, accessToken, user), "Token issued successfully"), nil
+}
+
+// ensureUserForToken returns the account for username, creating it on demand
+// when it is absent. The lookup order is username first (the caller-supplied
+// identity), then the synthetic email, so an account provisioned by an
+// earlier call is reused even if its username was normalised differently.
+//
+// A failed registration is not reported immediately: a concurrent request,
+// or a pre-existing account holding the synthetic email, is re-read first so
+// an idempotent retry does not surface a spurious conflict.
+func (s *userService) ensureUserForToken(
+	ctx context.Context,
+	username string,
+	provisioning types.TenantProvisioningMode,
+) (*types.User, error) {
+	user, err := s.userRepo.GetUserByUsername(ctx, username)
+	if user != nil {
+		return user, nil
+	}
+	if err != nil {
+		// Not fatal on its own: the repository reports "no such row" as an
+		// error, and an infrastructure failure will resurface on the
+		// registration attempt below.
+		logger.Warnf(ctx, "EnsureUserToken: username lookup for %s failed: %v",
+			secutils.SanitizeForLog(username), err)
+	}
+
+	email := username + ensureTokenEmailDomain
+	created, regErr := s.Register(ctx, &types.RegisterRequest{
+		Username:           username,
+		Email:              email,
+		Password:           ensureTokenPassword,
+		TenantProvisioning: provisioning,
+	})
+	if regErr == nil {
+		logger.Infof(ctx, "EnsureUserToken: auto-registered user %s",
+			secutils.SanitizeForLog(username))
+		return created, nil
+	}
+
+	if existing, _ := s.userRepo.GetUserByUsername(ctx, username); existing != nil {
+		return existing, nil
+	}
+	if existing, _ := s.userRepo.GetUserByEmail(ctx, email); existing != nil {
+		return existing, nil
+	}
+	return nil, regErr
+}
+
+// newestValidToken returns the token of the requested type with the latest
+// expiry among the user's unrevoked, unexpired rows. It is a best-effort
+// lookup: a storage failure yields "no token" and lets the caller fall back
+// to minting a new pair rather than failing the whole request.
+func (s *userService) newestValidToken(
+	ctx context.Context,
+	userID string,
+	tokenType string,
+) (string, bool) {
+	tokens, err := s.tokenRepo.GetTokensByUserID(ctx, userID)
+	if err != nil {
+		logger.Warnf(ctx, "EnsureUserToken: listing tokens for user %s failed: %v", userID, err)
+		return "", false
+	}
+
+	now := time.Now()
+	newest := ""
+	var newestExpiry time.Time
+	for _, token := range tokens {
+		if token == nil || token.TokenType != tokenType || token.IsRevoked {
+			continue
+		}
+		if !token.ExpiresAt.After(now) {
+			continue
+		}
+		if newest != "" && !token.ExpiresAt.After(newestExpiry) {
+			continue
+		}
+		newest, newestExpiry = token.Token, token.ExpiresAt
+	}
+	return newest, newest != ""
+}
+
+// validAccessToken returns the newest stored access token that still passes
+// full validation (signature, expiry, revocation, active account). The
+// second result is the tenant claim baked into that token, so the reported
+// active workspace matches the credential handed back to the caller.
+func (s *userService) validAccessToken(
+	ctx context.Context,
+	user *types.User,
+) (string, uint64, bool) {
+	token, ok := s.newestValidToken(ctx, user.ID, authTokenTypeAccess)
+	if !ok {
+		return "", 0, false
+	}
+
+	validatedUser, tenantID, err := s.ValidateToken(ctx, token)
+	if err != nil || validatedUser == nil || validatedUser.ID != user.ID {
+		logger.Warnf(ctx, "EnsureUserToken: stored access token for user %s rejected: %v", user.ID, err)
+		return "", 0, false
+	}
+	return token, tenantID, true
+}
+
+// tenantIDForAccessToken resolves the tenant claim of a just-issued access
+// token, falling back to the user's home tenant when validation unexpectedly
+// fails — the token is already persisted at this point, so a lookup failure
+// must not abort the response.
+func (s *userService) tenantIDForAccessToken(
+	ctx context.Context,
+	accessToken string,
+	user *types.User,
+) uint64 {
+	if _, tenantID, err := s.ValidateToken(ctx, accessToken); err == nil {
+		return tenantID
+	}
+	return user.TenantID
+}
+
+// loginResponseForToken assembles the /auth/login-shaped response around an
+// already-issued access token, so callers of EnsureUserToken see exactly the
+// payload Login returns (user, active workspace, memberships, token pair).
+func (s *userService) loginResponseForToken(
+	ctx context.Context,
+	user *types.User,
+	accessToken string,
+	refreshToken string,
+	tenantID uint64,
+	message string,
+) *types.LoginResponse {
+	var tenant *types.Tenant
+	if tenantID > 0 && s.tenantService != nil {
+		found, err := s.tenantService.GetTenantByID(ctx, tenantID)
+		if err != nil {
+			logger.Warnf(ctx, "EnsureUserToken: tenant %d lookup failed for user %s: %v",
+				tenantID, user.ID, err)
+		} else {
+			tenant = found
+		}
+	}
+
+	return &types.LoginResponse{
+		Success:      true,
+		Message:      message,
+		User:         user,
+		ActiveTenant: tenant,
+		Memberships:  s.buildMembershipsForUser(ctx, user, tenant),
+		Token:        accessToken,
+		RefreshToken: refreshToken,
+	}
+}
+
 // Logout invalidates every outstanding session for the user identified by
 // the presented JWT. Access and refresh tokens are both accepted so clients
 // can end the session without refreshing first; expired tokens are allowed

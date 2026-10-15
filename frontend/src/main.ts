@@ -26,7 +26,37 @@ installTDesignIconOfflineGuard();
 initTheme();
 initFont();
 
+/**
+ * 外部平台（如 LoLR）通过 iframe 嵌入本应用时，既无法设置 Authorization
+ * 请求头，也写不了本域的 localStorage，只能把 token 放在 URL 上传递。
+ * 这里在启动最早期把它落盘为正常登录态，随后从地址栏移除，避免 token
+ * 残留在浏览器历史中；用户 / 租户由路由守卫的 /auth/me 校准补齐。
+ *
+ * 参数名固定为 `weknora_token`：不能叫 `token`，那是 /login 邀请链接
+ * （Login.vue 的 route.query.token）在用的名字，否则会误吞邀请令牌。
+ */
+function consumeTokenFromUrl() {
+  const url = new URL(window.location.href);
+  const token = (url.searchParams.get("weknora_token") || "").trim();
+  if (!token) return;
+
+  localStorage.setItem("weknora_token", token);
+  // 外部签发的换发令牌可能不属于同一账号，先清掉避免串号。
+  localStorage.removeItem("weknora_refresh_token");
+
+  url.searchParams.delete("weknora_token");
+  const query = url.searchParams.toString();
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${query ? `?${query}` : ""}${url.hash}`,
+  );
+}
+
 async function bootstrap() {
+  // 必须早于下面读取 localStorage 会话的 refreshFromAuthMe
+  consumeTokenFromUrl();
+
   const app = createApp(App);
 
   // 全局错误处理：捕获未处理的组件错误，防止白屏

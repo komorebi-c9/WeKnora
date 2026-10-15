@@ -300,6 +300,58 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(response))
 }
 
+// EnsureUserToken godoc
+// @Summary      按用户名获取有效令牌
+// @Description  根据用户名返回该账号当前有效的访问令牌，账号不存在时自动注册；返回值与 /auth/login 一致
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        request  body      types.EnsureUserTokenRequest  true  "用户名"
+// @Success      200      {object}  dto.AuthLoginResponse  "有效令牌"
+// @Failure      400      {object}  errors.AppError         "请求参数错误"
+// @Failure      401      {object}  dto.AuthLoginResponse   "账号被禁用"
+// @Failure      500      {object}  errors.AppError         "服务内部错误"
+// @Router       /auth/user-token [post]
+func (h *AuthHandler) EnsureUserToken(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	logger.Info(ctx, "Start ensure user token")
+
+	var req types.EnsureUserTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error(ctx, "Failed to parse ensure user token request", err)
+		appErr := errors.NewValidationError("Invalid ensure user token parameters").WithDetails(err.Error())
+		c.Error(appErr)
+		return
+	}
+
+	username := strings.TrimSpace(secutils.SanitizeForLog(req.Username))
+	if username == "" {
+		logger.Error(ctx, "Missing username for ensure user token")
+		c.Error(errors.NewValidationError("Username is required"))
+		return
+	}
+
+	// The provisioning policy matches public registration so an auto-created
+	// account lands in the same kind of workspace a self-service signup gets.
+	response, err := h.userService.EnsureUserToken(ctx, username, h.resolveDefaultTenantMode(ctx))
+	if err != nil {
+		logger.Errorf(ctx, "Failed to ensure user token: %v", err)
+		appErr := errors.NewInternalServerError("Failed to ensure user token").WithDetails(err.Error())
+		c.Error(appErr)
+		return
+	}
+
+	if !response.Success {
+		logger.Warnf(ctx, "Ensure user token rejected: %s", response.Message)
+		c.JSON(http.StatusUnauthorized, dto.NewAuthLoginResponse(response))
+		return
+	}
+
+	logger.Infof(ctx, "Ensured valid token for user: %s", username)
+	c.JSON(http.StatusOK, dto.NewAuthLoginResponse(response))
+}
+
 // GetOIDCAuthorizationURL godoc
 // @Summary      获取OIDC授权地址
 // @Description  根据后端OIDC配置生成第三方登录跳转地址

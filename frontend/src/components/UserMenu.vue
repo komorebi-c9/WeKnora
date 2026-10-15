@@ -74,26 +74,29 @@
         </div>
         <div class="menu-divider"></div>
         <!-- 账号与空间是头像菜单的核心上下文；基础设施类配置统一收进「全部设置」。 -->
-        <div class="menu-item" @click="handleQuickNav('general')">
+        <div v-if="showUserMenuItem('personal')" class="menu-item" @click="handleQuickNav('general')">
           <t-icon name="user" class="menu-icon" />
           <span>{{ $t('general.personalSettings') }}</span>
         </div>
-        <div v-if="!authStore.isLiteMode" class="menu-item" @click="handleQuickNav('tenant')">
+        <div v-if="!authStore.isLiteMode && showUserMenuItem('workspace')" class="menu-item"
+          @click="handleQuickNav('tenant')">
           <t-icon name="user-circle" class="menu-icon" />
           <span>{{ $t('settings.workspaceSettings') }}</span>
         </div>
         <!-- “管理”类快捷入口只对真正具备写权限的人展示。只读名册和模型列表
              仍可从「全部设置」进入，避免 viewer 看到名不副实的管理入口。 -->
-        <div v-if="canManageMembers" class="menu-item" @click="handleQuickNav('members')">
+        <div v-if="canManageMembers && showUserMenuItem('members')" class="menu-item"
+          @click="handleQuickNav('members')">
           <t-icon name="usergroup" class="menu-icon" />
           <span>{{ $t('tenantMember.title') }}</span>
         </div>
-        <div v-if="canManageModels" class="menu-item" @click="handleQuickNav('models')">
+        <div v-if="canManageModels && showUserMenuItem('models')" class="menu-item"
+          @click="handleQuickNav('models')">
           <t-icon name="control-platform" class="menu-icon" />
           <span>{{ $t('settings.modelManagement') }}</span>
         </div>
         <div class="menu-divider"></div>
-        <div class="menu-item" @click="handleSettings">
+        <div v-if="showUserMenuItem('settings')" class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
           <span>{{ $t('general.allSettings') }}</span>
         </div>
@@ -103,12 +106,13 @@
           including tenant Owners. Real authorisation lives server-side
           (RequireSystemAdmin middleware); this is UI gating only.
         -->
-        <div v-if="authStore.isSystemAdmin" class="menu-item" @click="handleSystemAdmin">
+        <div v-if="authStore.isSystemAdmin && showUserMenuItem('systemAdmin')" class="menu-item"
+          @click="handleSystemAdmin">
           <t-icon name="server" class="menu-icon" />
           <span>{{ $t('settings.navGroups.systemAdministration') }}</span>
         </div>
-        <div class="menu-divider"></div>
-        <div class="menu-item" @click="openDocs">
+        <div v-if="showUserMenuItem('help') || showUserMenuItem('github')" class="menu-divider"></div>
+        <div v-if="showUserMenuItem('help')" class="menu-item" @click="openDocs">
           <t-icon name="help-circle" class="menu-icon" />
           <span class="menu-text-with-icon">
             <span>{{ $t('general.helpAndDocs') }}</span>
@@ -118,7 +122,8 @@
             </svg>
           </span>
         </div>
-        <div class="menu-item" :title="$t('common.githubStarTip')" @click="openGithub">
+        <div v-if="showUserMenuItem('github')" class="menu-item" :title="$t('common.githubStarTip')"
+          @click="openGithub">
           <t-icon name="logo-github" class="menu-icon" />
           <span class="menu-text-with-icon">
             <span>{{ $t('common.github') }}</span>
@@ -130,8 +135,8 @@
           </span>
         </div>
         <template v-if="!authStore.isLiteMode">
-          <div class="menu-divider"></div>
-          <div class="menu-item danger" @click="handleLogout">
+          <div v-if="showUserMenuItem('logout')" class="menu-divider"></div>
+          <div v-if="showUserMenuItem('logout')" class="menu-item danger" @click="handleLogout">
             <t-icon name="logout" class="menu-icon" />
             <span>{{ $t('auth.logout') }}</span>
           </div>
@@ -256,6 +261,24 @@ const canManageModels = computed(() =>
   authStore.isSystemAdmin ||
   authStore.hasRole(SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE.models),
 )
+// 暂时隐藏的用户菜单项。想不显示哪个就把 key 加进来，删掉即恢复。
+// key → 下拉菜单项（从上到下）：
+//   personal    个人设置
+//   workspace   空间设置
+//   members     成员管理
+//   models      模型管理
+//   settings    全部设置
+//   systemAdmin 系统管理
+//   help        帮助与文档
+//   github      GitHub
+//   logout      退出登录
+const HIDDEN_USER_MENU_ITEMS = new Set<string>([
+  'help',
+  'github',
+  'logout',
+])
+const showUserMenuItem = (key: string) => !HIDDEN_USER_MENU_ITEMS.has(key)
+
 const menuRef = ref<HTMLElement>()
 const tenantMenuItemRef = ref<HTMLElement>()
 const menuVisible = ref(false)

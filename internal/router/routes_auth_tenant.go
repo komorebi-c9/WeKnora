@@ -214,6 +214,10 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	r.POST("/auth/register-by-invite", publicAuthRL, handler.RegisterByInvite)
 	r.POST("/auth/invitations/lookup", publicAuthRL, handler.LookupInvitationByToken)
 	r.POST("/auth/login", handler.Login)
+	// /auth/user-token is the sibling of /auth/login for machine callers that
+	// identify an account by username only: it self-registers the account on
+	// first use and always answers with a currently valid token pair.
+	r.POST("/auth/user-token", handler.EnsureUserToken)
 	r.POST("/auth/auto-setup", handler.AutoSetup)
 	r.GET("/auth/config", handler.GetAuthConfig)
 	r.POST("/auth/switch-tenant", handler.SwitchTenant)

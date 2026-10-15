@@ -4749,6 +4749,89 @@
         "context_window": 4096,
         "source": "https://docs.cohere.com/docs/models#rerank"
       }
+    ],
+    "gaoshanyunji": [
+      {
+        "id": "qwen3.5-plus",
+        "name": "Qwen3.5 Plus",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "context_window": 1000000,
+        "max_output_tokens": 65536,
+        "source": "https://logosdata.cn"
+      },
+      {
+        "id": "qwen3.6-plus",
+        "name": "Qwen3.6 Plus",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "context_window": 1000000,
+        "max_output_tokens": 65536,
+        "source": "https://logosdata.cn"
+      },
+      {
+        "id": "qwen3.7-plus",
+        "name": "Qwen3.7 Plus",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "context_window": 1000000,
+        "max_output_tokens": 64000,
+        "source": "https://logosdata.cn"
+      },
+      {
+        "id": "qwen3.8-flash",
+        "name": "Qwen3.8 Flash",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "context_window": 1000000,
+        "max_output_tokens": 131072,
+        "source": "https://logosdata.cn"
+      },
+      {
+        "id": "qwen3.8-27b",
+        "name": "Qwen3.8 27B",
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ],
+        "source": "https://logosdata.cn"
+      },
+      {
+        "id": "text-embedding-v4",
+        "name": "Tongyi text-embedding-v4",
+        "type": "Embedding",
+        "input": [
+          "text"
+        ],
+        "dimension": 1024,
+        "source": "https://logosdata.cn"
+      },
+      {
+        "id": "qwen3-vl-rerank",
+        "name": "Qwen3 VL Rerank",
+        "type": "Rerank",
+        "input": [
+          "text"
+        ],
+        "source": "https://logosdata.cn"
+      }
     ]
   }
 }

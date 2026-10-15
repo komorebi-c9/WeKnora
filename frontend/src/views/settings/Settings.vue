@@ -232,6 +232,7 @@ import {
   INTEGRATION_TAB_MIN_ROLE,
 } from '@/config/integrations'
 import {
+  HIDDEN_SETTINGS_NAV_KEYS,
   SETTINGS_SECTION_MIN_ROLE,
   SYSTEM_ADMIN_SETTINGS_SECTIONS,
 } from '@/config/settingsAccess'
@@ -382,7 +383,12 @@ const navItems = computed(() => {
   if (!authStore.currentTenantRole && !authStore.canAccessAllTenants) {
     return [] as NavItem[]
   }
-  return all.filter((it) => canSeeSection(it.key) && isSectionSupported(it.key))
+  return all.filter(
+    (it) =>
+      canSeeSection(it.key)
+      && isSectionSupported(it.key)
+      && !HIDDEN_SETTINGS_NAV_KEYS.has(it.key),
+  )
 })
 
 const navGroups = computed<NavGroup[]>(() => {
@@ -434,7 +440,7 @@ const navGroups = computed<NavGroup[]>(() => {
       label: t('settings.navGroups.platform'),
       items: pickItems(['system']),
     },
-  ].filter((group) => group.items.length > 0)
+  ].filter((group) => group.items.length > 0 && !HIDDEN_SETTINGS_NAV_KEYS.has(group.key))
 })
 
 // 导航项点击处理

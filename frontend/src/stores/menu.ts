@@ -68,6 +68,23 @@ export const useMenuStore = defineStore('menuStore', () => {
 
   const liteHiddenPaths = new Set(['logout', 'organizations'])
 
+  // 菜单全部可选项（上方 menuArr 的 path → 名称，i18n key 见注释）：
+  //   creatChat       → 新对话（menu.newChat）
+  //   knowledge-bases → 知识库（menu.knowledgeBase）
+  //   artifacts       → 产物（menu.artifacts，仅 settings.sandbox 能力可用时才会出现）
+  //   agents          → 智能体（menu.agents）
+  //   toolbox         → 工具箱（toolbox.title）
+  //   organizations   → 共享空间（menu.organizations）
+  //   settings        → 系统设置（menu.settings）
+  //   logout          → 退出登录（menu.logout）
+  //
+  // 下面这个 Set 里放的是「暂时隐藏」的菜单入口（按 path 匹配），当前隐藏：
+  //   artifacts → 产物
+  //   agents    → 智能体
+  //   toolbox   → 工具箱
+  // 需要恢复时删掉这一行即可（也可只从 Set 中移除要恢复的 path）。
+  const temporarilyHiddenPaths = new Set(['artifacts', 'agents', 'toolbox'])
+
   // 共享空间 (organizations) 仅对当前空间的 admin / owner 暴露入口。
   // viewer / contributor 即便在共享空间里拥有资源，也无需自行管理共享关系，
   // 入口在侧栏只会徒增噪音；后端 RBAC 才是权限的最终来源（见 middleware/rbac.go）。
@@ -76,6 +93,9 @@ export const useMenuStore = defineStore('menuStore', () => {
     const deploymentCapabilities = useDeploymentCapabilitiesStore()
     return menuArr.filter(item => {
       if (authStore.isLiteMode && liteHiddenPaths.has(item.path)) {
+        return false
+      }
+      if (temporarilyHiddenPaths.has(item.path)) {
         return false
       }
       if (item.path === 'organizations' && !authStore.hasRole('admin')) {
