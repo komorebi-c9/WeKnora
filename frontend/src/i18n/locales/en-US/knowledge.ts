@@ -1691,8 +1691,8 @@ export default {
           desc: 'PaddleOCR-VL Cloud API'
         },
         weknoracloud: {
-          name: 'WeKnora Cloud',
-          desc: 'Document parsing via WeKnora Cloud'
+          name: 'Lolr Cloud',
+          desc: 'Document parsing via Lolr Cloud'
         },
         markitdown: {
           name: 'MarkItDown',

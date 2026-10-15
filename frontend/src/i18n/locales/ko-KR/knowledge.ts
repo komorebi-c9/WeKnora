@@ -107,8 +107,8 @@ export default {
           desc: 'Microsoft MarkItDown 변환기 (PDF/Office/HTML 등)'
         },
         weknoracloud: {
-          name: 'WeKnora Cloud',
-          desc: 'WeKnora Cloud를 통한 문서 파싱'
+          name: 'Lolr Cloud',
+          desc: 'Lolr Cloud를 통한 문서 파싱'
         },
         paddleocr_vl_cloud: {
           name: 'PaddleOCR-VL Cloud',

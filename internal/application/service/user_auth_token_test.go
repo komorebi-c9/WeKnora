@@ -62,8 +62,14 @@ func (s *stubAuthTokenRepo) GetTokenByID(_ context.Context, id string) (*types.A
 	}
 	return nil, errors.New("token not found")
 }
-func (s *stubAuthTokenRepo) GetTokensByUserID(context.Context, string) ([]*types.AuthToken, error) {
-	return nil, nil
+func (s *stubAuthTokenRepo) GetTokensByUserID(_ context.Context, userID string) ([]*types.AuthToken, error) {
+	var out []*types.AuthToken
+	for _, token := range s.tokens {
+		if token != nil && token.UserID == userID {
+			out = append(out, token)
+		}
+	}
+	return out, nil
 }
 func (s *stubAuthTokenRepo) UpdateToken(context.Context, *types.AuthToken) error { return nil }
 func (s *stubAuthTokenRepo) DeleteToken(context.Context, string) error           { return nil }
@@ -78,7 +84,13 @@ type stubUserRepoForAuth struct {
 	updateCalls int
 }
 
-func (s *stubUserRepoForAuth) CreateUser(context.Context, *types.User) error { return nil }
+func (s *stubUserRepoForAuth) CreateUser(_ context.Context, user *types.User) error {
+	if s.users == nil {
+		s.users = map[string]*types.User{}
+	}
+	s.users[user.ID] = user
+	return nil
+}
 func (s *stubUserRepoForAuth) GetUserByID(_ context.Context, id string) (*types.User, error) {
 	user, ok := s.users[id]
 	if !ok {
@@ -98,7 +110,14 @@ func (s *stubUserRepoForAuth) GetUserByEmail(_ context.Context, email string) (*
 	return nil, errors.New("user not found")
 }
 
-func (s *stubUserRepoForAuth) GetUserByUsername(context.Context, string) (*types.User, error) {
+func (s *stubUserRepoForAuth) GetUserByUsername(_ context.Context, username string) (*types.User, error) {
+	for _, user := range s.users {
+		if user != nil && user.Username == username {
+			return user, nil
+		}
+	}
+	// Mirrors the repository's "no such row" contract loosely: callers that
+	// only care whether the account exists check the user pointer.
 	return nil, nil
 }
 func (s *stubUserRepoForAuth) GetUserByTenantID(context.Context, uint64) (*types.User, error) {

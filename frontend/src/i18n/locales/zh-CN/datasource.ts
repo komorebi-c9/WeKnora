@@ -171,7 +171,7 @@ export default {
   },
   integrations: {
     cli: {
-      title: 'WeKnora CLI',
+      title: 'Lolr CLI',
       subtitle: '在终端中管理知识库和文档、检索内容并发起问答，也可通过脚本或 MCP 接入 AI 工具。',
       docs: '查看 CLI 文档',
       docsHint: '安装说明与完整命令参考',
@@ -179,13 +179,13 @@ export default {
       installTitle: '安装 CLI',
       installDesc: '目前支持源码构建，需要 Git 和 Go 1.26+。以下示例适用于 macOS / Linux，PATH 设置仅在当前终端生效；长期使用请将二进制放入 PATH 目录。',
       connectTitle: '连接当前服务',
-      connectDesc: '创建并启用名为 weknora 的连接配置，然后使用邮箱和密码登录。如果已有同名配置，请更换名称，并同步修改 MCP 示例中的配置名。',
+      connectDesc: '创建并启用名为 Lolr 的连接配置，然后使用邮箱和密码登录。如果已有同名配置，请更换名称，并同步修改 MCP 示例中的配置名。',
       verifyTitle: '验证连接',
       verifyDesc: '检查服务与认证状态，并列出当前账号可访问的知识库。',
       commandsTitle: '常用命令',
       commandsDesc: '将 KB_ID 替换为知识库 ID，按需替换文件路径、检索词和问题。上传后的文档需解析完成才能检索。',
       mcpTitle: '接入 MCP 客户端',
-      mcpDesc: '完成登录后，将以下配置添加到支持 stdio 的 MCP 客户端。若客户端无法找到 weknora，请将 command 改为二进制的绝对路径。',
+      mcpDesc: '完成登录后，将以下配置添加到支持 stdio 的 MCP 客户端。若客户端无法找到 Lolr，请将 command 改为二进制的绝对路径。',
       copy: '复制',
       copied: '已复制'
     },
@@ -197,18 +197,18 @@ export default {
     filterByAgentWithName: '按智能体筛选：{name}',
     filterAllAgents: '全部智能体',
     claw: {
-      title: 'WeKnora Skill',
-      subtitle: '通过 WeKnora REST API 导入文档并执行混合检索（向量 + 关键词）。适用于上传文件/URL/Markdown 到知识库、跨库检索与浏览知识内容。',
+      title: 'Lolr Skill',
+      subtitle: '通过 Lolr REST API 导入文档并执行混合检索（向量 + 关键词）。适用于上传文件/URL/Markdown 到知识库、跨库检索与浏览知识内容。',
       capabilitiesTitle: 'Skill 能力',
       stepsTitle: '配置步骤',
       openApiSettings: '打开 API 信息',
       copy: '复制',
       copyEnvSuccess: '已复制环境变量示例',
       copyCmdSuccess: '已复制安装命令',
-      ecosystemNote: 'Skill 托管于 ClawHub（{\'@\'}lyingbug/weknora），完整 API 说明与版本历史请参见 ClawHub 页面。',
+      ecosystemNote: 'Skill 托管于 ClawHub（{\'@\'}lyingbug/Lolr），完整 API 说明与版本历史请参见 ClawHub 页面。',
       installCta: '前往 ClawHub',
-      installCtaHint: '安装 WeKnora Skill · 将在新标签页打开',
-      hubMeta: 'ClawHub · {\'@\'}lyingbug/weknora · MIT-0',
+      installCtaHint: '安装 Lolr Skill · 将在新标签页打开',
+      hubMeta: 'ClawHub · {\'@\'}lyingbug/Lolr · MIT-0',
       steps: {
         verify: {
           title: '验证连接',
@@ -220,7 +220,7 @@ export default {
         },
         env: {
           title: '配置环境变量',
-          desc: '在终端或 ~/.zshrc、~/.bashrc 中设置 WEKNORA_BASE_URL 与 WEKNORA_API_KEY。下方示例已填入当前 API 地址，请将 API Key 替换为实际值。'
+          desc: '在终端或 ~/.zshrc、~/.bashrc 中设置 Lolr_BASE_URL 与 Lolr_API_KEY。下方示例已填入当前 API 地址，请将 API Key 替换为实际值。'
         },
         api: {
           title: '获取 API 凭证',
@@ -252,7 +252,7 @@ export default {
     },
     chrome: {
       title: '知识管理助手',
-      subtitle: '配合 WeKnora 自建服务使用：在任意网页侧边栏提问、剪藏内容、Markdown 速记，将浏览中的知识沉淀到你的知识库。',
+      subtitle: '配合 Lolr 自建服务使用：在任意网页侧边栏提问、剪藏内容、Markdown 速记，将浏览中的知识沉淀到你的知识库。',
       capabilitiesTitle: '核心能力',
       stepsTitle: '配置步骤',
       openApiSettings: '打开 API 信息',
@@ -272,7 +272,7 @@ export default {
         },
         port: {
           title: '桌面版配置固定端口（推荐）',
-          desc: '使用 WeKnora 桌面版时，在 API 信息中设置固定端口（如 37841），避免每次启动后地址变化导致插件断连。'
+          desc: '使用 Lolr 桌面版时，在 API 信息中设置固定端口（如 37841），避免每次启动后地址变化导致插件断连。'
         },
         api: {
           title: '获取 API 凭证',
@@ -361,7 +361,7 @@ export default {
       capabilityMessageHistory: '消息历史',
       capabilityMessageHistoryHint: '允许检索空间聊天历史并读取聊天历史统计；不授予空间配置权限。',
       capabilityManageModels: '管理模型',
-      capabilityManageModelsHint: '允许管理模型配置、模型凭据、模型连通性测试和 WeKnoraCloud 凭据。',
+      capabilityManageModelsHint: '允许管理模型配置、模型凭据、模型连通性测试和 LolrCloud 凭据。',
       capabilityManageMcpServices: '管理 MCP 服务',
       capabilityManageMcpServicesHint: '允许管理 MCP 服务、凭据、工具审批策略和该主体的 OAuth 授权状态。',
       capabilityManageDatasources: '管理数据源',
@@ -408,14 +408,14 @@ export default {
       directWarning: '直接传用户 ID 会信任调用方请求头，仅适用于可信服务端到服务端调用。',
       directWarningDetail: '任何持有 API Key 的调用方都可以通过修改用户 ID 请求头冒充其他外部用户，从而共用或劫持其 MCP OAuth 授权。请勿用于浏览器或不可信客户端；面向终端用户请使用「签名 Token」。',
       signedRecommended: '推荐给面向用户的应用：由你的业务后端为外部用户签发短期 HS256 JWT。',
-      signedFlowDetail: 'HMAC 密钥仅保存在 WeKnora 与你的可信后端，切勿放入请求或下发给浏览器。请求头里传的是用该密钥签出的 JWT 字符串（每次签发或过期后会变），不是密钥本身。JWT 须包含 sub（外部用户 ID）、tenant_id、aud=weknora、exp（有效期不超过 24 小时）。',
+      signedFlowDetail: 'HMAC 密钥仅保存在 Lolr 与你的可信后端，切勿放入请求或下发给浏览器。请求头里传的是用该密钥签出的 JWT 字符串（每次签发或过期后会变），不是密钥本身。JWT 须包含 sub（外部用户 ID）、tenant_id、aud=Lolr、exp（有效期不超过 24 小时）。',
       directHeader: '用户 ID 请求头',
       requireDirectHeader: '必须携带用户 ID',
       requireDirectHeaderDesc: '开启后，缺少用户 ID 请求头的 API Key 请求将被拒绝；关闭则按整个空间统一处理，不区分具体终端用户。',
       tokenHeader: 'Token 请求头',
       tokenHeaderDesc: '客户端在该固定请求头中携带后端签发的 JWT。',
       hmacSecret: 'HMAC 密钥',
-      hmacSecretDesc: '与 WeKnora 保存的同一份密钥；仅用于后端签发 JWT，不要作为请求头发送。',
+      hmacSecretDesc: '与 Lolr 保存的同一份密钥；仅用于后端签发 JWT，不要作为请求头发送。',
       secretConfigured: '已配置密钥（不可回看）；输入新值可轮换',
       secretSavedCopyHint: '密钥已保存，请立即复制到后端配置。离开本页后将无法再次查看。',
       generateSecret: '生成密钥',
@@ -424,7 +424,7 @@ export default {
       hmacSecretResetConfirmOk: '确认重置',
       hmacSecretResetConfirmCancel: '取消',
       tokenSignExample: '后端签发 JWT 示例（Go）',
-      signedRequestStep0: '# 0. 在你的后端签发 JWT（HS256，aud=weknora，sub=用户 ID，tenant_id={tenantId}，exp 不超过 24 小时）',
+      signedRequestStep0: '# 0. 在你的后端签发 JWT（HS256，aud=Lolr，sub=用户 ID，tenant_id={tenantId}，exp 不超过 24 小时）',
       signedRequestStep0Hint: '#    将 JWT 放入 {headerName} 请求头，不要传 HMAC 密钥',
       requestExampleCreateSession: '# 1. 创建会话',
       requestExampleAgentChat: '# 2. Agent 对话（SSE；将 <session_id> 替换为第 1 步返回的 id）',
@@ -991,7 +991,7 @@ export default {
     welcomeMessageDesc: '访客打开嵌入聊天后、尚未发言时展示；留空则不显示',
     showSuggestedQuestions: '推荐问题',
     showSuggestedQuestionsDesc: '访客未发言前展示快捷提问，内容来自智能体配置与关联知识库',
-    originsHint: '填写允许嵌入的宿主网站来源（A），不是 WeKnora 地址（B）。每行一个完整 Origin，如 https://shop.example.com；至少一项，支持 *.example.com 子域通配',
+    originsHint: '填写允许嵌入的宿主网站来源（A），不是 Lolr 地址（B）。每行一个完整 Origin，如 https://shop.example.com；至少一项，支持 *.example.com 子域通配',
     originsRequired: '请至少填写一个域名白名单',
     originsInvalid: '域名格式无效：{origin}',
     originsWildcardProd: '生产环境不允许使用通配符 *',
@@ -1049,10 +1049,10 @@ export default {
     allowFileUpload: '显示文件上传',
     allowFileUploadDesc: '开启后，访客可上传图片与文档附件。仅当绑定的智能体已启用图片上传时才会生效。',
     webhookUrl: 'Webhook 地址',
-    webhookUrlPlaceholder: 'https://your-server.example.com/weknora/embed-events',
-    webhookUrlDesc: '可选。访客发消息与助手回复完成时，WeKnora 会向该 HTTPS 地址 POST 事件（message_sent / message_received）。',
+    webhookUrlPlaceholder: 'https://your-server.example.com/Lolr/embed-events',
+    webhookUrlDesc: '可选。访客发消息与助手回复完成时，Lolr 会向该 HTTPS 地址 POST 事件（message_sent / message_received）。',
     webhookSecret: 'Webhook 签名密钥',
-    webhookSecretPlaceholder: '用于 HMAC-SHA256 签名（X-WeKnora-Signature）',
+    webhookSecretPlaceholder: '用于 HMAC-SHA256 签名（X-Lolr-Signature）',
     webhookSecretKeep: '留空表示不修改已保存的密钥',
     webhookSecretDesc: '可选。配置后请求体会带 sha256 签名头，便于你的服务端校验来源。',
     agentWebSearchDisabledHint: '当前智能体未启用联网搜索，访客端不会显示联网按钮。请先在智能体设置中开启联网搜索。',

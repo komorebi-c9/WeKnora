@@ -38,6 +38,10 @@ var noAuthAPI = map[string][]string{
 	"/api/v1/auth/register":   {"POST"},
 	"/api/v1/auth/login":      {"POST"},
 	"/api/v1/auth/auto-setup": {"POST"},
+	// Token-by-username surface: the caller presents no credential at all
+	// (the username IS the identity), so the global Auth middleware must let
+	// it through — the handler performs the account resolution itself.
+	"/api/v1/auth/user-token": {"POST"},
 	// Share-link surfaces accept a plaintext invite token from anonymous
 	// callers (an invitee who hasn't registered yet). They are registered
 	// as public routes in RegisterAuthRoutes and rate-limited by IP, so the

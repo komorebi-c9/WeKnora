@@ -645,6 +645,25 @@ definitions:
     - ErrVectorStoreUnavailable
     - ErrModelInUse
     - ErrImportPrerequisiteMissing
+  github_com_Tencent_WeKnora_internal_handler_dto.AuthLoginResponse:
+    properties:
+      active_tenant:
+        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_handler_dto.TenantResponse'
+      memberships:
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.Membership'
+        type: array
+      message:
+        type: string
+      refresh_token:
+        type: string
+      success:
+        type: boolean
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.User'
+    type: object
   github_com_Tencent_WeKnora_internal_handler_dto.CredentialFieldMetadata:
     properties:
       configured:
@@ -3448,6 +3467,15 @@ definitions:
         type: boolean
       truncate_prompt_tokens:
         type: integer
+    type: object
+  github_com_Tencent_WeKnora_internal_types.EnsureUserTokenRequest:
+    properties:
+      username:
+        maxLength: 100
+        minLength: 2
+        type: string
+    required:
+    - username
     type: object
   github_com_Tencent_WeKnora_internal_types.EvaluationDetail:
     properties:
@@ -16384,6 +16412,40 @@ paths:
       security:
       - Bearer: []
       summary: 切换激活空间
+      tags:
+      - 认证
+  /auth/user-token:
+    post:
+      consumes:
+      - application/json
+      description: 根据用户名返回该账号当前有效的访问令牌，账号不存在时自动注册；返回值与 /auth/login 一致
+      parameters:
+      - description: 用户名
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.EnsureUserTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 有效令牌
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_handler_dto.AuthLoginResponse'
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "401":
+          description: 账号被禁用
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_handler_dto.AuthLoginResponse'
+        "500":
+          description: 服务内部错误
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      summary: 按用户名获取有效令牌
       tags:
       - 认证
   /auth/validate:
