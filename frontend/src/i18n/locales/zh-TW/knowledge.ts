@@ -107,8 +107,8 @@ export default {
           desc: 'Microsoft MarkItDown 文件轉換工具（支援 PDF/Office/HTML 等）'
         },
         weknoracloud: {
-          name: 'WeKnora Cloud',
-          desc: '使用 WeKnora Cloud 進行文件解析'
+          name: 'Lolr Cloud',
+          desc: '使用 Lolr Cloud 進行文件解析'
         },
         paddleocr_vl_cloud: {
           name: 'PaddleOCR-VL Cloud',

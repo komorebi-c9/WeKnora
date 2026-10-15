@@ -286,6 +286,7 @@ WeMM 的模板已经包含所需特殊 token，保留 vLLM 的 `add_special_toke
 | 厂商 | ID | 对话 | 向量 | 重排 | 视觉 | 语音 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: |
 | 自定义（OpenAI 兼容接口） | `generic` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 高山云基 | `gaoshanyunji` | ✓ | ✓ | ✓ | ✓ | |
 | WeKnora 云服务 | `weknoracloud` | ✓ | ✓ | ✓ | ✓ | |
 | 阿里云 DashScope | `aliyun` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 智谱 BigModel | `zhipu` | ✓ | ✓ | ✓ | ✓ | ✓ |

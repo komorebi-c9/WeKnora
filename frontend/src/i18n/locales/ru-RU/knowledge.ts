@@ -107,8 +107,8 @@ export default {
           desc: 'Конвертер Microsoft MarkItDown (PDF/Office/HTML и др.)'
         },
         weknoracloud: {
-          name: 'WeKnora Cloud',
-          desc: 'Парсинг документов через WeKnora Cloud'
+          name: 'Lolr Cloud',
+          desc: 'Парсинг документов через Lolr Cloud'
         },
         paddleocr_vl_cloud: {
           name: 'PaddleOCR-VL Cloud',

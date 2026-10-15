@@ -626,10 +626,10 @@ export default {
       },
       knowledge: {
         title: '建立你的知識庫',
-        desc: '知識庫是一切的起點：上傳文件、網頁或 FAQ，WeKnora 會自動解析並建立索引。點擊這裡進入知識庫。'
+        desc: '知識庫是一切的起點：上傳文件、網頁或 FAQ，Lolr 會自動解析並建立索引。點擊這裡進入知識庫。'
       },
       welcome: {
-        title: '歡迎使用 WeKnora',
+        title: '歡迎使用 Lolr',
         desc: '只需幾步，帶你快速了解知識庫、對話與智慧代理的核心用法。點擊「下一步」開始。'
       }
     }

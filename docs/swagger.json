@@ -2351,6 +2351,58 @@
                 ]
             }
         },
+        "/auth/user-token": {
+            "post": {
+                "description": "根据用户名返回该账号当前有效的访问令牌，账号不存在时自动注册；返回值与 /auth/login 一致",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "认证"
+                ],
+                "summary": "按用户名获取有效令牌",
+                "parameters": [
+                    {
+                        "description": "用户名",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.EnsureUserTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "有效令牌",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_handler_dto.AuthLoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "账号被禁用",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_handler_dto.AuthLoginResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务内部错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/validate": {
             "get": {
                 "description": "验证访问令牌是否有效",
@@ -26403,6 +26455,35 @@
                 "ErrImportPrerequisiteMissing"
             ]
         },
+        "github_com_Tencent_WeKnora_internal_handler_dto.AuthLoginResponse": {
+            "type": "object",
+            "properties": {
+                "active_tenant": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_handler_dto.TenantResponse"
+                },
+                "memberships": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.Membership"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                },
+                "refresh_token": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.User"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_handler_dto.CredentialFieldMetadata": {
             "type": "object",
             "properties": {
@@ -29854,6 +29935,19 @@
                 },
                 "truncate_prompt_tokens": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.EnsureUserTokenRequest": {
+            "type": "object",
+            "required": [
+                "username"
+            ],
+            "properties": {
+                "username": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 2
                 }
             }
         },

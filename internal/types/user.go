@@ -169,6 +169,14 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required,min=6"`
 }
 
+// EnsureUserTokenRequest represents a request to obtain a valid access
+// token for the account identified by username, provisioning it on first
+// use. Only the username is required: the email is derived from it
+// (username + a fixed domain) and the bootstrap password is fixed too.
+type EnsureUserTokenRequest struct {
+	Username string `json:"username" binding:"required,min=2,max=100"`
+}
+
 type OIDCAuthURLResponse struct {
 	Success             bool   `json:"success"`
 	ProviderDisplayName string `json:"provider_display_name,omitempty"`

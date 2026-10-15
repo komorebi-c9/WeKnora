@@ -360,7 +360,7 @@ export default {
     attachmentStillProcessing: 'Вложение {name} ещё обрабатывается'
   },
   createChat: {
-    title: 'Привет, я WeKnora — ваши знания всегда под рукой',
+    title: 'Привет, я Lolr — ваши знания всегда под рукой',
     newSessionTitle: 'Новая сессия',
     openProject: 'Выбрать проект',
     clearProject: 'Снять привязку',

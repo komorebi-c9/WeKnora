@@ -93,12 +93,12 @@ export default {
         desc: 'Ask about WeKnora versions, features and setup. Using the current page as context, the assistant can create agents, schedule tasks and organize knowledge on your behalf, within your permissions.'
       },
       welcome: {
-        title: 'Welcome to WeKnora',
+        title: 'Welcome to Lolr',
         desc: 'A few quick steps to get you familiar with knowledge bases, chat and agents. Click "Next" to begin.'
       },
       knowledge: {
         title: 'Create your knowledge base',
-        desc: 'Everything starts here: upload documents, web pages or FAQs and WeKnora parses and indexes them automatically. Click here to open knowledge bases.'
+        desc: 'Everything starts here: upload documents, web pages or FAQs and Lolr parses and indexes them automatically. Click here to open knowledge bases.'
       },
       chat: {
         title: 'Start an AI chat',

@@ -12,6 +12,16 @@ type UserService interface {
 	Register(ctx context.Context, req *types.RegisterRequest) (*types.User, error)
 	// Login authenticates a user and returns tokens
 	Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error)
+	// EnsureUserToken returns a currently valid access token for the account
+	// identified by username, in the same shape as Login. The account is
+	// auto-provisioned (email = username + the integration domain, fixed
+	// bootstrap password) when it does not exist yet. An unexpired stored
+	// access token is returned as-is; otherwise the stored refresh token is
+	// spent; otherwise a fresh token pair is minted. provisioning is the
+	// caller-resolved tenant policy for an auto-created account.
+	EnsureUserToken(
+		ctx context.Context, username string, provisioning types.TenantProvisioningMode,
+	) (*types.LoginResponse, error)
 	// GetOIDCAuthorizationURL builds the third-party OIDC authorization URL
 	GetOIDCAuthorizationURL(ctx context.Context, redirectURI string) (*types.OIDCAuthURLResponse, error)
 	// LoginWithOIDC exchanges the callback code, auto-provisions users if needed, and completes login.
