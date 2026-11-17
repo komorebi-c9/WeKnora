@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 PID_FILE="$ROOT/.weknora.pid"
-PORT="${PORT:-8080}"
+PORT="${PORT:-8081}"
 MAIN_PKG="./cmd/server"
 
 log() { printf '%s\n' "$*"; }

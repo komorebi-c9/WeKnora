@@ -32,7 +32,7 @@ func getMaxFileSize() int {
 			return size * 1024 * 1024
 		}
 	}
-	return 50 * 1024 * 1024
+	return 100 * 1024 * 1024
 }
 
 // GRPCDocumentReader implements DocumentReader over gRPC.
