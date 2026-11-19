@@ -917,6 +917,11 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 		"success":                  true,
 		"registration_mode":        mode,
 		"complex_password_enabled": complexPasswordEnabled,
+		// Orion SSO projection. The SPA uses these two flags to decide whether
+		// to render the local login form or the "reopen from Orion" page.
+		// Neither the Orion base URL nor any credential is exposed here.
+		"orion_sso_enabled":      h.configInfo != nil && h.configInfo.OrionAuth.IsEnabled(),
+		"login_fallback_enabled": h.configInfo == nil || !h.configInfo.IsLoginDisabled(),
 	})
 }
 

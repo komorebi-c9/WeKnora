@@ -15,6 +15,7 @@ import "@/components/css/assistant-page-fill.less";
 // Without it the scroller computes 0 height and renders no items.
 import "vue-virtual-scroller/dist/vue-virtual-scroller.css";
 import i18n, { initI18n } from "./i18n";
+import { BRAND_NAME } from "@/constants/brand";
 import { initTheme } from "@/composables/useTheme";
 import { initFont } from "@/composables/useFont";
 import { installTDesignIconOfflineGuard } from "@/utils/tdesign-icon-offline";
@@ -26,6 +27,10 @@ installTDesignIconOfflineGuard();
 
 initTheme();
 initFont();
+
+// 品牌名可能来自运行时配置（window.__RUNTIME_CONFIG__.BRAND_NAME），
+// 静态 <title> 只是默认值，这里统一覆写一次，避免标签页显示旧品牌。
+document.title = BRAND_NAME;
 
 /**
  * 外部平台（如 LoLR）通过 iframe 嵌入本应用时，既无法设置 Authorization

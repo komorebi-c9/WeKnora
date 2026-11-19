@@ -786,5 +786,13 @@ export default {
   initialization: {
     skip: '건너뛰기',
     next: '다음'
+  },
+  orionEntry: {
+    title: 'Orion에서 다시 열기',
+    description: '이 시스템은 Orion 통합 로그인을 사용합니다. Orion 워크스페이스에서 지식 베이스를 다시 열어 주세요.',
+    retry: '다시 시도',
+    retrying: '로그인 정보를 다시 가져오는 중…',
+    failed: '로그인 정보를 가져오지 못했습니다',
+    help: '계속 문제가 발생하면 관리자에게 문의하세요'
   }
 }

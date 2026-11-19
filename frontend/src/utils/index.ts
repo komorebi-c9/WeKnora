@@ -9,6 +9,8 @@ declare global {
       MAX_FILE_SIZE_MB?: number;
       MAX_SKILL_BUNDLE_SIZE_MB?: number;
       DEFAULT_LOCALE?: string;
+      // 品牌名，由 frontend/docker-entrypoint.sh 注入；见 @/constants/brand
+      BRAND_NAME?: string;
     };
   }
 }

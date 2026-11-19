@@ -215,6 +215,7 @@ import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { useI18n } from 'vue-i18n'
+import { BRAND_NAME } from '@/constants/brand'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useModalShell } from '@/composables/useModalShell'
 import { useAssistantPageContext } from '@/composables/useAssistantPageContext'
@@ -253,6 +254,7 @@ import {
 } from '@/config/integrations'
 import {
   HIDDEN_SETTINGS_NAV_KEYS,
+  SETTINGS_NAV_GROUP_KEYS,
   SETTINGS_SECTION_MIN_ROLE,
   SYSTEM_ADMIN_SETTINGS_SECTIONS,
 } from '@/config/settingsAccess'
@@ -362,20 +364,18 @@ const canSeeSection = (key: string): boolean => {
   return authStore.hasRole(min)
 }
 
-const navItems = computed(() => {
-  // 一律走 SETTINGS_SECTION_MIN_ROLE 表，避免 ad-hoc isAdmin/isOwner 散落在多处。
-  // 服务端在每条路由上仍以 g.Viewer/Admin/Owner 为准，这里只决定 UI 是
-  // 否露入口；改动入口规则请同步更新 settingsAccess.ts 和对应后端路由。
+// 未过滤的全量导航项（与本用户角色无关），供分组组装与隐藏 key 自检共用。
+const allNavItems = computed<NavItem[]>(() => {
   const integrationItems: NavItem[] = INTEGRATION_PREVIEW_ITEMS.map((item) => ({
     key: integrationSectionKey(item.key),
     icon: item.icon.type === 'icon' ? item.icon.name : 'integration',
     emoji: item.icon.type === 'emoji' ? item.icon.value : undefined,
     label: t(`integrations.tabs.${item.key}`),
   }))
-  const all: NavItem[] = [
+  return [
     { key: 'general', icon: 'setting', label: t('general.title') },
     { key: 'ollama', icon: 'server', label: 'Ollama' },
-    { key: 'weknoracloud', icon: '', label: 'WeKnora Cloud' },
+    { key: 'weknoracloud', icon: '', label: `${BRAND_NAME} Cloud` },
     { key: 'models', icon: 'control-platform', label: t('settings.modelManagement') },
     { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig') },
     { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title') },
@@ -400,18 +400,40 @@ const navItems = computed(() => {
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
     ...integrationItems,
   ]
+})
+
+const navItems = computed(() => {
+  // 一律走 SETTINGS_SECTION_MIN_ROLE 表，避免 ad-hoc isAdmin/isOwner 散落在多处。
+  // 服务端在每条路由上仍以 g.Viewer/Admin/Owner 为准，这里只决定 UI 是
+  // 否露入口；改动入口规则请同步更新 settingsAccess.ts 和对应后端路由。
   // currentTenantRole 为空表示「membership 还没加载」—— 比起渲染整套
   // viewer 入口然后角色一返回又消失，先卡住不渲染更稳，跟原先 members
   // 入口的策略一致。
   if (!authStore.currentTenantRole && !authStore.canAccessAllTenants) {
     return [] as NavItem[]
   }
-  return all.filter(
+  return allNavItems.value.filter(
     (it) =>
       canSeeSection(it.key)
       && isSectionSupported(it.key)
       && !HIDDEN_SETTINGS_NAV_KEYS.has(it.key),
   )
+})
+
+// 配置自检：HIDDEN_SETTINGS_NAV_KEYS 里写错的 key 不会隐藏任何东西，
+// 开发期直接点名，避免"改了没反应"。生产构建不执行。
+onMounted(() => {
+  if (!import.meta.env.DEV) return
+  const knownKeys = new Set<string>([
+    ...SETTINGS_NAV_GROUP_KEYS,
+    ...allNavItems.value.map((item) => item.key),
+  ])
+  const unknown = [...HIDDEN_SETTINGS_NAV_KEYS].filter((key) => !knownKeys.has(key))
+  if (unknown.length > 0) {
+    console.warn(
+      `[uiVisibility] 以下 key 不是设置分组/分区，隐藏不会生效：${unknown.join(', ')}`,
+    )
+  }
 })
 
 const navGroups = computed<NavGroup[]>(() => {

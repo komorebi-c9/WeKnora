@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
 import type { QuestionOrigin } from '@/utils/questionOrigin'
+import { HIDDEN_SIDEBAR_MENU_PATHS } from '@/config/uiVisibility'
 
 type MenuChild = Record<string, any>
 
@@ -84,12 +85,10 @@ export const useMenuStore = defineStore('menuStore', () => {
   //   settings        → 系统设置（menu.settings）
   //   logout          → 退出登录（menu.logout）
   //
-  // 下面这个 Set 里放的是「暂时隐藏」的菜单入口（按 path 匹配），当前隐藏：
-  //   artifacts → 产物
-  //   agents    → 智能体
-  //   toolbox   → 工具箱
-  // 需要恢复时删掉这一行即可（也可只从 Set 中移除要恢复的 path）。
-  const temporarilyHiddenPaths = new Set(['artifacts', 'agents', 'toolbox'])
+  // 「暂时隐藏」的菜单入口按 path 匹配，统一配置在 @/config/uiVisibility 的
+  // HIDDEN_SIDEBAR_MENU_PATHS 里（同处还有侧栏搜索/助手入口与设置菜单的开关）。
+  // 需要恢复某项时，从那个集合里删掉对应 path 即可。
+  const temporarilyHiddenPaths = HIDDEN_SIDEBAR_MENU_PATHS
 
   // 共享空间 (organizations) 仅对当前空间的 admin / owner 暴露入口。
   // viewer / contributor 即便在共享空间里拥有资源，也无需自行管理共享关系，

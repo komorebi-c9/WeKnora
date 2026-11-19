@@ -25,6 +25,10 @@ type Config struct {
 	Auth            *AuthConfig            `yaml:"auth"             json:"auth"`
 	Audit           *AuditConfig           `yaml:"audit"            json:"audit"`
 	OIDCAuth        *OIDCAuthConfig        `yaml:"oidc_auth"        json:"oidc_auth"`
+	// OrionAuth configures Orion (LoLR) as WeKnora's identity provider.
+	// When enabled, the SPA no longer logs in locally: it exchanges an
+	// Orion assertion for a WeKnora session instead.
+	OrionAuth *OrionAuthConfig `yaml:"orion_auth" json:"orion_auth"`
 	Models          []ModelConfig          `yaml:"models"           json:"models"`
 	VectorDatabase  *VectorDatabaseConfig  `yaml:"vector_database"  json:"vector_database"`
 	DocReader       *DocReaderConfig       `yaml:"docreader"        json:"docreader"`
@@ -397,6 +401,59 @@ type OIDCAuthConfig struct {
 	UserInfoMapping       *OIDCUserInfoMapping `yaml:"user_info_mapping"      json:"user_info_mapping"`
 }
 
+// OrionAuthConfig describes how WeKnora reaches Orion's identity API.
+//
+// Only one upstream call is ever made (GET me_path), so there is no token
+// endpoint, secret or scope here: WeKnora forwards the caller's own
+// NS-TOKEN and lets Orion decide whether it is valid.
+type OrionAuthConfig struct {
+	// Enable turns Orion into the identity provider. While false the
+	// deployment behaves exactly as before (local login/registration).
+	Enable bool `yaml:"enable" json:"enable"`
+	// BaseURL is the Orion origin, e.g. http://192.168.3.139:8000.
+	BaseURL string `yaml:"base_url" json:"base_url"`
+	// MePath is the identity endpoint, defaulting to /orion/api/auth/current.
+	MePath string `yaml:"me_path" json:"me_path"`
+	// TimeoutSeconds bounds one exchange round trip; default 5.
+	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
+	// LoginFallback decides where an unauthenticated visitor lands when
+	// Orion has no valid assertion for them:
+	//   false (default) → the SPA shows "reopen from Orion"; the local
+	//                     login/registration routes are not registered.
+	//   true            → the SPA falls back to the local login page,
+	//                     which keeps the existing behaviour available.
+	LoginFallback bool `yaml:"login_fallback" json:"login_fallback"`
+}
+
+// IsEnabled reports whether Orion is the active identity provider.
+func (c *OrionAuthConfig) IsEnabled() bool {
+	return c != nil && c.Enable
+}
+
+// IsLoginFallbackEnabled reports whether the local login page stays
+// reachable for visitors without an Orion assertion.
+func (c *OrionAuthConfig) IsLoginFallbackEnabled() bool {
+	return c != nil && c.LoginFallback
+}
+
+// Timeout returns the exchange timeout, falling back to 5 seconds.
+func (c *OrionAuthConfig) Timeout() time.Duration {
+	if c == nil || c.TimeoutSeconds <= 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(c.TimeoutSeconds) * time.Second
+}
+
+// IsLoginDisabled reports whether local login/registration must be absent.
+// It is true only when Orion is enabled and the operator did not ask for
+// the local login fallback.
+func (c *Config) IsLoginDisabled() bool {
+	if c == nil || c.OrionAuth == nil {
+		return false
+	}
+	return c.OrionAuth.IsEnabled() && !c.OrionAuth.LoginFallback
+}
+
 // PromptTemplateI18n holds localized name and description for a prompt template.
 type PromptTemplateI18n struct {
 	Name        string `yaml:"name"        json:"name"`
@@ -659,6 +716,7 @@ func LoadConfig() (*Config, error) {
 
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
+	applyOrionAuthEnvOverrides(&cfg)
 	applyAgentEnvOverrides(&cfg)
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyNetworkEnvOverrides()
@@ -705,6 +763,12 @@ func ValidateConfig(cfg *Config) error {
 		if strings.TrimSpace(cfg.OIDCAuth.DiscoveryURL) == "" &&
 			(strings.TrimSpace(cfg.OIDCAuth.AuthorizationEndpoint) == "" || strings.TrimSpace(cfg.OIDCAuth.TokenEndpoint) == "") {
 			errs = append(errs, "oidc_auth.discovery_url or both oidc_auth.authorization_endpoint and oidc_auth.token_endpoint are required when OIDC is enabled")
+		}
+	}
+
+	if cfg.OrionAuth != nil && cfg.OrionAuth.Enable {
+		if strings.TrimSpace(cfg.OrionAuth.BaseURL) == "" {
+			errs = append(errs, "orion_auth.base_url is required when orion_auth is enabled")
 		}
 	}
 
@@ -833,6 +897,41 @@ func applyOIDCEnvOverrides(cfg *Config) {
 	}
 	if cfg.OIDCAuth.DiscoveryURL == "" && cfg.OIDCAuth.IssuerURL != "" {
 		cfg.OIDCAuth.DiscoveryURL = strings.TrimRight(cfg.OIDCAuth.IssuerURL, "/") + "/.well-known/openid-configuration"
+	}
+}
+
+// applyOrionAuthEnvOverrides layers ORION_* env vars over the YAML block.
+// The env names stay short (rather than WEKNORA_ORION_*) to match the
+// existing OIDC_AUTH_* convention in this file.
+func applyOrionAuthEnvOverrides(cfg *Config) {
+	if cfg.OrionAuth == nil {
+		cfg.OrionAuth = &OrionAuthConfig{}
+	}
+
+	if value := strings.TrimSpace(os.Getenv("ORION_AUTH_ENABLE")); value != "" {
+		cfg.OrionAuth.Enable = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_BASE_URL")); value != "" {
+		cfg.OrionAuth.BaseURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_AUTH_ME_PATH")); value != "" {
+		cfg.OrionAuth.MePath = value
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_TIMEOUT_SECONDS")); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil {
+			cfg.OrionAuth.TimeoutSeconds = seconds
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_AUTH_LOGIN_FALLBACK")); value != "" {
+		cfg.OrionAuth.LoginFallback = strings.EqualFold(value, "true")
+	}
+
+	cfg.OrionAuth.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.OrionAuth.BaseURL), "/")
+	if strings.TrimSpace(cfg.OrionAuth.MePath) == "" {
+		cfg.OrionAuth.MePath = "/orion/api/auth/current"
+	}
+	if cfg.OrionAuth.TimeoutSeconds <= 0 {
+		cfg.OrionAuth.TimeoutSeconds = 5
 	}
 }
 

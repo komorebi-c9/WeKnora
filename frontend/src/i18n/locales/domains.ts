@@ -56,6 +56,8 @@ export const DOMAIN_BY_NAMESPACE: Readonly<Record<string, LocaleDomain>> = {
   tenantInvitation: 'auth',
   platformApiKeys: 'auth',
   organization: 'auth',
+  // SSO landing page shown when no Orion assertion is available.
+  orionEntry: 'auth',
 
   // chat, mentions, artifacts & local browser preview
   chat: 'chat',

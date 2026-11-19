@@ -786,5 +786,13 @@ export default {
     capabilityRequired: 'Select at least one capability',
     loadFailed: 'Failed to load platform API keys',
     createFailed: 'Failed to create platform API key'
+  },
+  orionEntry: {
+    title: 'Reopen this page from Orion',
+    description: 'This system uses Orion single sign-on. Open the knowledge base entry from your Orion workspace, then try again.',
+    retry: 'Try again',
+    retrying: 'Requesting your session…',
+    failed: 'Still unable to obtain a session',
+    help: 'Contact your administrator if this keeps happening'
   }
 }

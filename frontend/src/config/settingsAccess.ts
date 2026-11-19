@@ -47,6 +47,25 @@ export const SETTINGS_MANAGEMENT_SHORTCUT_MIN_ROLE = {
   models: 'admin',
 } as const satisfies Record<string, SettingsRoleKey>
 
+/**
+ * 设置侧栏的分组 key，顺序与 Settings.vue 的 navGroups 一致。
+ *
+ * 这里只用于两件事：把分组 key 纳入 HIDDEN_SETTINGS_NAV_KEYS 的合法值校验，
+ * 以及开发期判断某个隐藏 key 到底写错了没有。分组本身仍由 Settings.vue 定义，
+ * uiVisibility.test.ts 会断言两处保持一致，改一处就要同步另一处。
+ */
+export const SETTINGS_NAV_GROUP_KEYS = [
+  'account',
+  'workspace',
+  'models_runtime',
+  'integrations',
+  'data_extensions',
+  'system_administration',
+  'platform',
+] as const
+
+export type SettingsNavGroupKey = (typeof SETTINGS_NAV_GROUP_KEYS)[number]
+
 export const SYSTEM_ADMIN_SETTINGS_SECTIONS = new Set([
   'system-global',
   'model-catalog',
@@ -66,12 +85,14 @@ export const SYSTEM_ADMIN_SETTINGS_SECTIONS = new Set([
  * 分组与分区对照（分组 key → 中文名；缩进行是组内的分区 key → 中文名）：
  *
  *   account  账户
- *     general 常规设置、userprofile 用户信息、mymemory 我的记忆、
- *     envvars 环境变量（Lite 部署显示为「沙箱密钥」）
+ *     general 常规设置、userprofile 用户信息、assistant 助手设置、
+ *     mymemory 我的记忆、envvars 环境变量（Lite 部署显示为「沙箱密钥」）、
+ *     credentialvault 凭证保险箱
  *   workspace  空间
- *     tenant 空间信息、members 成员管理、chathistory 消息管理、memory 长期记忆
+ *     tenant 空间信息、members 成员管理、defaults 默认模型（默认模型/回退）、
+ *     chathistory 消息管理、memory 长期记忆
  *   models_runtime  模型
- *     models 模型管理、ollama Ollama、weknoracloud WeKnora Cloud
+ *     models 模型管理、ollama Ollama、weknoracloud Cloud
  *   integrations  发布集成
  *     integration-im IM 集成、integration-embed 网页嵌入、integration-api API 集成、
  *     integration-mcpserver MCP Server、integration-cli CLI、
@@ -85,6 +106,11 @@ export const SYSTEM_ADMIN_SETTINGS_SECTIONS = new Set([
  *   platform  平台
  *     system 版本信息
  *
+ * 注意：`SETTINGS_SECTION_MIN_ROLE` 里还有 skills / mcp 两个 key，但它们已不再
+ * 出现在设置导航中，写进本集合不会有任何效果。
+ *
+ * 其它入口（左侧栏搜索、助手入口、头像菜单）的隐藏开关见 ./uiVisibility.ts。
+ *
  * 配置示例：
  *   new Set(['integrations'])
  *     → 整组隐藏「发布集成」
@@ -97,6 +123,19 @@ export const SYSTEM_ADMIN_SETTINGS_SECTIONS = new Set([
  */
 export const HIDDEN_SETTINGS_NAV_KEYS = new Set<string>([
   // 发布集成（整组）：IM 集成 / 网页嵌入 / API 集成 / MCP Server / CLI / Chrome 插件 / Claw Skill
-  // 'integrations',
+  'assistant',
+  'envvars',
+  'chathistory',
+  'integration-im',
+  'integration-api',
+  'integration-embed',
+  'integration-cli',
+  'integration-chrome',
+  'integration-claw',
+  'credentialvault',
+  'ollama',
   'weknoracloud',
+  'mymemory',
+  'memory',
+  'data_extensions',
 ])

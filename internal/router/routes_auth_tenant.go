@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -226,15 +227,37 @@ func RegisterMyCredentialVaultRoutes(r *gin.RouterGroup, h *handler.CredentialVa
 	}
 }
 
-// RegisterAuthRoutes registers authentication routes
-func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rbacGuards) {
+// RegisterAuthRoutes registers authentication routes.
+//
+// cfg decides which login surfaces exist at all. When Orion is the identity
+// provider and the operator did not ask for the local login fallback, the
+// local login/registration routes are not registered at all, so they answer
+// 404 instead of merely being "disabled" (a disabled handler can be
+// re-enabled by a config mistake; a missing route cannot).
+func RegisterAuthRoutes(
+	r *gin.RouterGroup, handler *handler.AuthHandler, g *rbacGuards, cfg *config.Config,
+) {
+	// Shared IP budget for every unauthenticated credential-accepting
+	// endpoint (share links, login, and the Orion exchange).
+	publicAuthRL := middleware.PublicAuthRateLimit()
+
+	if cfg != nil && cfg.OrionAuth.IsEnabled() {
+		// Minting a session from an Orion assertion is as sensitive as
+		// login, so it shares the same brute-force budget.
+		r.POST("/auth/orion/exchange", publicAuthRL, handler.OrionExchange)
+	}
+
+	if cfg.IsLoginDisabled() {
+		registerOrionOnlyAuthRoutes(r, handler, g)
+		return
+	}
+
 	r.POST("/auth/register", handler.Register)
 	// Share-link surfaces are unauthenticated and accept a plaintext
 	// token from the caller; rate-limit by IP to bound brute-force /
 	// enumeration / abuse traffic. Limiter is shared across both
 	// endpoints (see middleware/auth_public_ratelimit.go) so total
 	// budget per IP is intuitive.
-	publicAuthRL := middleware.PublicAuthRateLimit()
 	r.POST("/auth/register-by-invite", publicAuthRL, handler.RegisterByInvite)
 	r.POST("/auth/invitations/lookup", publicAuthRL, handler.LookupInvitationByToken)
 	r.POST("/auth/login", handler.Login)
@@ -259,6 +282,30 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rba
 	g.apiKeyRoute(r, http.MethodGet, "/auth/me", apiKeyAny(), handler.GetCurrentUser)
 	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
 	r.POST("/auth/change-password", handler.ChangePassword)
+}
+
+// registerOrionOnlyAuthRoutes registers the session surfaces that remain when
+// Orion is the sole identity provider and the local login fallback is off.
+//
+// Everything that could create an account or a credential locally is absent:
+// register, register-by-invite, invitations/lookup, login, user-token,
+// auto-setup, the whole OIDC client flow, and change-password (Orion users
+// have no local password). What stays are the endpoints a live session needs
+// to keep working: config discovery, refresh, validate, logout, identity
+// read-back, preference updates and workspace switching.
+func registerOrionOnlyAuthRoutes(
+	r *gin.RouterGroup, handler *handler.AuthHandler, g *rbacGuards,
+) {
+	r.GET("/auth/config", handler.GetAuthConfig)
+	r.POST("/auth/switch-tenant", handler.SwitchTenant)
+	r.POST("/auth/refresh", handler.RefreshToken)
+	r.GET("/auth/validate", handler.ValidateToken)
+	r.POST("/auth/logout", handler.Logout)
+	// auth/me returns only the caller's own identity/profile, so it is safe
+	// for any valid API key. Chat clients / MCP call it to discover "who am I";
+	// leaving it default-deny was why scoped keys got a 403 here.
+	g.apiKeyRoute(r, http.MethodGet, "/auth/me", apiKeyAny(), handler.GetCurrentUser)
+	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
 }
 
 // RegisterSystemRoutes registers system information routes

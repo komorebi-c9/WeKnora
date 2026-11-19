@@ -786,5 +786,13 @@ export default {
   initialization: {
     skip: '跳过',
     next: '下一步'
+  },
+  orionEntry: {
+    title: '重新从 Orion 系统跳转',
+    description: '本系统使用 Orion 统一登录，请从 Orion 工作台打开知识库入口后重试。',
+    retry: '重新尝试',
+    retrying: '正在重新获取登录凭据…',
+    failed: '仍无法获取登录凭据',
+    help: '如需协助，请联系系统管理员'
   }
 }

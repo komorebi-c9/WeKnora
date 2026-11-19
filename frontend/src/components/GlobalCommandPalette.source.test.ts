@@ -83,6 +83,8 @@ async function fixture(options: { kbId?: string; unsupported?: boolean; missingK
         if (name === '@/stores/deploymentCapabilities') {
           return { useDeploymentCapabilitiesStore: () => ({ isSupported: () => true }) }
         }
+        // 侧栏隐藏开关：这里固定成空集合，避免用户改配置影响快捷键断言。
+        if (name === '@/config/uiVisibility') return { HIDDEN_SIDEBAR_ITEMS: new Set<string>() }
         if (name === './GlobalCommandPalette/useSearch') return { useCmdkSearch: () => search }
         if (name === './GlobalCommandPalette/useHighlight') return { highlightText: (text: string) => text }
         if (name === './GlobalCommandPalette/useStartChat') return { useStartChat: () => ({ startChat: (...args: unknown[]) => chats.push(args) }) }
