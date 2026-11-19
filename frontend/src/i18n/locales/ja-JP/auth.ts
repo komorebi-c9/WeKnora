@@ -786,5 +786,13 @@ export default {
     capabilityRequired: '権限を1つ以上選択してください',
     loadFailed: 'プラットフォームAPIキーの読み込みに失敗しました',
     createFailed: 'プラットフォームAPIキーの作成に失敗しました'
+  },
+  orionEntry: {
+    title: 'Orion から開き直してください',
+    description: 'このシステムは Orion のシングルサインオンを使用しています。Orion ワークスペースからナレッジベースを開き直してください。',
+    retry: '再試行',
+    retrying: 'サインイン情報を再取得しています…',
+    failed: 'サインイン情報を取得できませんでした',
+    help: '解決しない場合は管理者にお問い合わせください'
   }
 }

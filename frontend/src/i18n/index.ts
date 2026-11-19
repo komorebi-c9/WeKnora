@@ -1,6 +1,7 @@
 import { watch } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { isEmbedPage } from '../utils/authRefresh.ts'
+import { applyBrandToMessages } from './brandMessages.ts'
 import { pluralRules } from './pluralizationRules.ts'
 import { BUILT_IN_DEFAULT, resolveDefaultLocale } from './resolveDefaultLocale.ts'
 
@@ -148,7 +149,8 @@ export async function loadLocaleMessages(rawLocale: string): Promise<SupportedMa
     .then((mod) => {
       const embedSeed = embedSeedMessages.get(target)
       const bundle = embedSeed ? mergePlainRecords(embedSeed, mod.default) : mod.default
-      i18n.global.setLocaleMessage(target, bundle as never)
+      // 品牌名在装载时统一改写，语言包文件本身保留历史文案。
+      i18n.global.setLocaleMessage(target, applyBrandToMessages(bundle) as never)
       loadedLocales.add(target)
       return target
     })
@@ -178,9 +180,9 @@ export function seedEmbedLocaleMessages(
     embedSeedMessages.set(locale, seed)
     if (loadedLocales.has(locale)) {
       const current = i18n.global.getLocaleMessage(locale) as unknown as Record<string, unknown>
-      i18n.global.setLocaleMessage(locale, mergePlainRecords(seed, current) as never)
+      i18n.global.setLocaleMessage(locale, applyBrandToMessages(mergePlainRecords(seed, current)) as never)
     } else {
-      i18n.global.setLocaleMessage(locale, seed as never)
+      i18n.global.setLocaleMessage(locale, applyBrandToMessages(seed) as never)
     }
   }
   return syncEmbedSharedLocale(activeLocale)

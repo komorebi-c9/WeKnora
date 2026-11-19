@@ -21,14 +21,25 @@ const compiled = ts.transpileModule(grouping.getText(ast), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText
 
-function integrationMenu(visibleKeys: string[]): string[] {
-  const groups = runInNewContext(`${compiled}\nnavGroups.value`, {
+// HIDDEN_SETTINGS_NAV_KEYS 由用例显式传入（默认空），这样"用户自己配置隐藏项"
+// 不会让这些断言随配置变化而红；集合本身的合法性由 uiVisibility.test.ts 校验。
+function buildGroups(visibleKeys: string[], hidden: Iterable<string> = []) {
+  const hiddenSet = new Set(hidden)
+  // 真实组件里 navItems 先做单项过滤，navGroups 再做分组过滤；沙箱把两步都还原，
+  // 否则单项隐藏与"组内全隐藏"两类断言无法覆盖到。
+  const navItems = visibleKeys.filter((key) => !hiddenSet.has(key)).map((key) => ({ key }))
+  return runInNewContext(`${compiled}\nnavGroups.value`, {
     computed,
-    navItems: { value: visibleKeys.map((key) => ({ key })) },
+    navItems: { value: navItems },
     t: (key: string) => key,
     integrationSectionKey,
     INTEGRATION_PREVIEW_ITEMS,
+    HIDDEN_SETTINGS_NAV_KEYS: hiddenSet,
   }) as Array<{ key: string; items: Array<{ key: string }> }>
+}
+
+function integrationMenu(visibleKeys: string[], hidden: Iterable<string> = []): string[] {
+  const groups = buildGroups(visibleKeys, hidden)
   const integrationGroup = groups.find((group) => group.key === 'integrations')
   return Array.from(integrationGroup?.items ?? [], (item) => item.key)
 }
@@ -43,6 +54,23 @@ test('settings sidebar preserves visibility filtering without hiding CLI', () =>
   const visible = integrationKeys.filter((key) => key !== 'integration-api' && key !== 'integration-im')
   assert.deepEqual(integrationMenu(visible), visible)
   assert.deepEqual(integrationMenu(['general']), [])
+})
+
+test('a hidden section key removes only that entry', () => {
+  const visible = ['general', ...integrationKeys]
+  const remaining = integrationMenu(visible, ['integration-cli'])
+  assert.deepEqual(remaining, integrationKeys.filter((key) => key !== 'integration-cli'))
+})
+
+test('a hidden group key removes the whole group', () => {
+  const groups = buildGroups(['general', ...integrationKeys], ['integrations'])
+  assert.equal(groups.some((group) => group.key === 'integrations'), false)
+})
+
+test('hiding every entry of a group also drops the group title', () => {
+  const groups = buildGroups(['general', ...integrationKeys], integrationKeys)
+  assert.equal(groups.some((group) => group.key === 'integrations'), false)
+  assert.equal(groups.some((group) => group.key === 'account'), true)
 })
 
 // Keep navigation tests tied to the real close handler, without mounting

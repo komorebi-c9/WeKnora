@@ -115,7 +115,18 @@ instance.interceptors.request.use(
 // must surface to the page (e.g. expired token), not trigger the
 // refresh-then-redirect-to-login flow (issue #1617). '/auth/register' already
 // covers '/auth/register-by-invite' via substring match.
-const PUBLIC_AUTH_PATHS = ['/auth/auto-setup', '/auth/login', '/auth/register', '/auth/oidc/', '/auth/invitations/lookup', '/api/v1/embed/'];
+// The Orion exchange belongs here too: a 401 from it means "no usable Orion
+// assertion", which must reach the caller (so it can show the reopen-from-Orion
+// page) instead of triggering refresh-then-redirect-to-login.
+const PUBLIC_AUTH_PATHS = [
+  '/auth/auto-setup',
+  '/auth/login',
+  '/auth/register',
+  '/auth/oidc/',
+  '/auth/invitations/lookup',
+  '/auth/orion/exchange',
+  '/api/v1/embed/',
+];
 
 function isPublicAuthRequest(url?: string): boolean {
   if (!url) return false;

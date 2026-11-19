@@ -184,6 +184,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
+import { HIDDEN_SIDEBAR_ITEMS } from '@/config/uiVisibility'
 import { useAuthStore } from '@/stores/auth'
 import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import { useCmdkSearch, type CmdkFileGroup, type CmdkChunk, type CmdkMsgGroup } from './GlobalCommandPalette/useSearch'
@@ -602,7 +603,11 @@ const isEditingElement = (el: EventTarget | null): boolean => {
   return false
 }
 
+// 搜索入口被隐藏时，快捷键也一并停用：入口藏了但面板还能被唤出等于没藏干净。
+const paletteShortcutsEnabled = !HIDDEN_SIDEBAR_ITEMS.has('search')
+
 const onGlobalKey = (e: KeyboardEvent) => {
+  if (!paletteShortcutsEnabled) return
   const isCmd = e.metaKey || e.ctrlKey
   if (isCmd && e.key.toLowerCase() === 'k') {
     // Always allow ⌘K to open, even from an input.

@@ -3,15 +3,15 @@
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-                <img class="logo" src="@/assets/img/weknora.png" alt="">
+                <BrandMark :size="24" />
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="logo_actions">
-                <t-tooltip v-if="assistantStore.entry === 'sidebar'" :content="assistantName" placement="bottom">
+                <t-tooltip v-if="showSidebarAssistant" :content="assistantName" placement="bottom">
                     <AssistantButton data-guide="assistant-entry" icon-only :icon-size="18" :label="assistantName"
                         :active="assistantStore.visible" @click="assistantStore.toggle()" />
                 </t-tooltip>
-                <t-tooltip placement="bottom">
+                <t-tooltip v-if="showSidebarSearch" placement="bottom">
                     <template #content>
                         <span class="cmdk-tip">
                             <span class="cmdk-tip-label">{{ t('menu.search') }}</span>
@@ -65,8 +65,9 @@
         <div class="menu_top" ref="scrollContainer" @scroll="handleScroll">
             <!-- 全局搜索入口：点击打开命令面板（⌘K）。展开态移至顶部 logo_row 的图标按钮；
                  折叠态在此处保留为图标项 + 深色 tooltip。 -->
-            <div class="menu_box menu_box--cmdk" v-if="uiStore.sidebarCollapsed">
-                <t-tooltip placement="right">
+            <div class="menu_box menu_box--cmdk"
+                v-if="uiStore.sidebarCollapsed && (showSidebarSearch || showSidebarAssistant)">
+                <t-tooltip v-if="showSidebarSearch" placement="right">
                     <template #content>
                         <span class="cmdk-tip">
                             <span class="cmdk-tip-label">{{ t('menu.search') }}</span>
@@ -81,7 +82,7 @@
                         </div>
                     </div>
                 </t-tooltip>
-                <t-tooltip v-if="assistantStore.entry === 'sidebar'" :content="assistantName" placement="right">
+                <t-tooltip v-if="showSidebarAssistant" :content="assistantName" placement="right">
                     <AssistantButton data-guide="assistant-entry" class="assistant-sidebar-entry" icon-only :icon-size="18"
                         :label="assistantName" :active="assistantStore.visible" @click="assistantStore.toggle()" />
                 </t-tooltip>
@@ -151,7 +152,8 @@
                             </div>
                         </div>
                     </template>
-                    <template v-else-if="activeBucket?.loaded && filteredGroupedSessions.length === 0">
+                    <template
+                        v-else-if="activeBucket?.loaded && filteredGroupedSessions.length === 0 && !HIDDEN_SIDEBAR_ITEMS.has('sessions-empty-state')">
                         <div class="submenu_empty">{{ t('menu.noSessions') }}</div>
                     </template>
                     <template v-else>
@@ -229,6 +231,8 @@ import { getSessionsList, batchDelSessions, deleteAllSessions, getSession } from
 import { useChatResourcesStore } from '@/stores/chatResources';
 import { listAllIMChannels } from '@/api/agent/index';
 import SessionSidebarRow from './SessionSidebarRow.vue';
+import { HIDDEN_SIDEBAR_ITEMS } from '@/config/uiVisibility';
+import BrandMark from '@/components/BrandMark.vue';
 import PanelResizeHandle from './PanelResizeHandle.vue';
 import { SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from '@/utils/sidebarWidth';
 import {
@@ -346,6 +350,14 @@ watch(() => uiStore.sidebarBrowserStatus && toolboxPreview.value.some((tool) => 
 const commandPaletteStore = useCommandPaletteStore();
 const assistantStore = useAssistantStore();
 const assistantName = computed(() => assistantStore.displayName || t('assistant.title'));
+
+// 左侧栏入口的显示开关（见 @/config/uiVisibility）。隐藏 search 时同时停用
+// ⌘K / Ctrl+K 与 "/" 快捷键，避免入口藏了但功能还能被唤出。
+const showSidebarSearch = computed(() => !HIDDEN_SIDEBAR_ITEMS.has('search'))
+const showSidebarAssistant = computed(
+    () => assistantStore.entry === 'sidebar' && !HIDDEN_SIDEBAR_ITEMS.has('assistant'),
+)
+
 
 // Platform-aware label for the ⌘K hint. navigator.platform is deprecated but
 // the alternatives (userAgentData.platform) aren't universally available yet;

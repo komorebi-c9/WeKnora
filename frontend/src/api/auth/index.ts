@@ -271,6 +271,10 @@ export interface AuthConfigResponse {
   success: boolean
   registration_mode: 'self_serve' | 'invite_register' | 'invite_only' | string
   complex_password_enabled: boolean
+  /** Orion 是身份提供方，前端需要走凭据换取。 */
+  orion_sso_enabled?: boolean
+  /** false 表示本地登录页不可达（SSO-only）。 */
+  login_fallback_enabled?: boolean
 }
 
 export async function getAuthConfig(): Promise<AuthConfigResponse> {
@@ -278,8 +282,31 @@ export async function getAuthConfig(): Promise<AuthConfigResponse> {
     const response = await get('/api/v1/auth/config')
     return response as unknown as AuthConfigResponse
   } catch {
-    return { success: false, registration_mode: '', complex_password_enabled: false }
+    // 配置不可达时按“本地登录可用”处理：宁可显示登录页，
+    // 也不要把用户困在“请从 Orion 重新跳转”的提示页上。
+    return {
+      success: false,
+      registration_mode: '',
+      complex_password_enabled: false,
+      orion_sso_enabled: false,
+      login_fallback_enabled: true,
+    }
   }
+}
+
+/**
+ * 用 Orion 凭据换取 WeKnora 会话。
+ *
+ * 浏览器无法给普通链接附加自定义请求头，因此这里发同源请求，让浏览器
+ * 自动携带 Orion 下发的 NS-TOKEN Cookie；服务端同时接受 NS-TOKEN 请求头，
+ * 供反向代理等场景使用。
+ *
+ * 失败时抛出异常（含 HTTP 状态码），由调用方决定落到提示页还是登录页。
+ */
+export async function exchangeOrionToken(assertion?: string): Promise<LoginResponse> {
+  const config = assertion ? { headers: { 'NS-TOKEN': assertion } } : undefined
+  const response = await post('/api/v1/auth/orion/exchange', {}, config)
+  return response as unknown as LoginResponse
 }
 
 /**

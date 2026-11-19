@@ -16,11 +16,17 @@ if [ "$SKILL_MB" -gt 512 ] 2>/dev/null; then
   SKILL_MB=512
 fi
 
+# 品牌名（默认 Lolr Ai）。见 src/constants/brand.ts：
+# 运行时配置优先于构建期 VITE_BRAND_NAME，因此换品牌只需改环境变量并重启前端容器。
+# 去掉引号、反斜杠与换行，避免环境变量把 config.js 的语法写坏。
+BRAND_NAME_VALUE=$(printf '%s' "${BRAND_NAME:-Lolr Ai}" | tr -d '"\\\r\n' | cut -c1-64)
+
 cat > /usr/share/nginx/html/config.js << EOF
 window.__RUNTIME_CONFIG__ = {
   MAX_FILE_SIZE_MB: ${FILE_MB},
   MAX_SKILL_BUNDLE_SIZE_MB: ${SKILL_MB},
-  DEFAULT_LOCALE: "${RUNTIME_DEFAULT_LOCALE}"
+  DEFAULT_LOCALE: "${RUNTIME_DEFAULT_LOCALE}",
+  BRAND_NAME: "${BRAND_NAME_VALUE}"
 };
 EOF
 

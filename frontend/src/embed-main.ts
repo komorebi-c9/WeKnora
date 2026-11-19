@@ -8,8 +8,12 @@ import { installTDesignIconOfflineGuard } from '@/utils/tdesign-icon-offline'
 import i18n from './i18n/embed'
 import EmbedPage from '@/views/embed/EmbedPage.vue'
 import ProtectedResourcePreview from '@/components/ProtectedResourcePreview.vue'
+import { BRAND_NAME } from '@/constants/brand'
 
 installTDesignIconOfflineGuard()
+
+// 与主站一致：静态 <title> 只是默认值，运行时配置可覆盖品牌名。
+document.title = `${BRAND_NAME} Embed`
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
