@@ -280,6 +280,9 @@ const canManageModels = computed(() =>
 //   github      GitHub
 //   logout      退出登录
 const HIDDEN_USER_MENU_ITEMS = new Set<string>([
+  'personal',
+  'workspace',
+  'members',
   'help',
   'github',
   'logout',

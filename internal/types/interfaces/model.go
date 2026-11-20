@@ -70,4 +70,23 @@ type ModelRepository interface {
 	// ClearDefaultByType clears the default flag for all models of a specific type
 	// optionally excluding a specific model ID.
 	ClearDefaultByType(ctx context.Context, tenantID uint, modelType types.ModelType, excludeID string) error
+	// ListByManagedBy returns every model row whose lifecycle is owned by
+	// managedBy. tenantID 0 means every tenant; the synchroniser normally
+	// scopes the call to the workspace it is reconciling.
+	ListByManagedBy(ctx context.Context, managedBy string, tenantID uint64) ([]*types.Model, error)
+	// UpsertManaged inserts a row owned by managedBy or updates the existing
+	// row with the same primary key, reviving it when it was soft-deleted. It
+	// refuses to overwrite a row owned by a different subsystem, so a sync can
+	// never clobber a hand-created model.
+	UpsertManaged(ctx context.Context, model *types.Model, managedBy string) error
+	// ReconcileManaged atomically replaces the managedBy-owned rows of one
+	// workspace with the desired set inside a single database transaction:
+	// with replaceAll the previous rows are soft-deleted first (credential
+	// rotation), otherwise rows absent from desired are pruned. Either the
+	// reader sees the full old set or the full new set — never a partially
+	// synced window.
+	ReconcileManaged(
+		ctx context.Context, tenantID uint64, managedBy string,
+		desired []*types.Model, replaceAll bool,
+	) (created, updated, deleted int, err error)
 }

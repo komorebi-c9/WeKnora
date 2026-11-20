@@ -73,8 +73,9 @@ const onSystemThemeChange = (event: MediaQueryListEvent) => {
 prefersDark?.addEventListener('change', onSystemThemeChange);
 
 // ANSI palette: ls --color uses the usual dircolors mapping (dir=blue,
-// exec=green, link=cyan). Only the green slots stay WeKnora brand so
-// user@host (01;32) matches the product color; path (01;34) stays blue
+// exec=green, link=cyan). The green slots stay brand-linked (deep tones
+// from constants/brandPalette.ts, readable on both terminal backgrounds)
+// so user@host (01;32) matches the product color; path (01;34) stays blue
 // like directories.
 function xtermTheme(dark: boolean) {
     return dark
@@ -86,8 +87,8 @@ function xtermTheme(dark: boolean) {
             selectionBackground: '#3a3a3a',
             red: '#c64751',
             brightRed: '#de6670',
-            green: '#06b04d',
-            brightGreen: '#07c05f',
+            green: '#31788e',
+            brightGreen: '#3a95b1',
             yellow: '#c4a000',
             brightYellow: '#fce94f',
             blue: '#3465a4',
@@ -105,8 +106,8 @@ function xtermTheme(dark: boolean) {
             selectionBackground: '#d0d7de',
             red: '#e34d59',
             brightRed: '#f36d78',
-            green: '#06b04d',
-            brightGreen: '#07c05f',
+            green: '#31788e',
+            brightGreen: '#3a95b1',
             yellow: '#c4a000',
             brightYellow: '#c4a000',
             blue: '#3465a4',

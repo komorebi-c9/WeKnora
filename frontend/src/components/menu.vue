@@ -1177,7 +1177,7 @@ const getIcon = (path: string) => {
     const artifactsActiveState = route.name === 'artifactLibrary';
     const organizationsActiveState = route.name === 'organizationList';
 
-    // 知识库图标：只在知识库页面显示绿色
+    // 知识库图标：只在知识库页面显示品牌色
     knowledgeIcon.value = kbActiveState.isKbActive ? 'zhishiku-green.svg' : 'zhishiku.svg';
 
     // 智能体图标：只在智能体页面显示绿色
@@ -1189,7 +1189,7 @@ const getIcon = (path: string) => {
     toolboxIcon.value = route.name === 'toolbox' ? 'toolbox-green.svg' : 'toolbox.svg';
     automationIcon.value = route.name === 'automationList' ? 'automation-green.svg' : 'automation.svg';
 
-    // 组织图标：只在组织页面显示绿色
+    // 组织图标：只在组织页面显示品牌色
     organizationIcon.value = organizationsActiveState ? 'organization-green.svg' : 'organization.svg';
 
     // 对话图标：只在对话创建页面显示绿色，其他情况显示默认

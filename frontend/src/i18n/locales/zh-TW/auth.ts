@@ -253,7 +253,8 @@ export default {
       agents: '{count} 智慧代理'
     },
     title: '共享空間',
-    subtitle: '建立或加入共享空間，讓多個空間互相協作，共享知識庫與智慧代理',
+    // subtitle: '建立或加入共享空間，讓多個空間互相協作，共享知識庫與智慧代理',
+    subtitle: '建立或加入共享空間，讓多個空間互相協作，共享知識庫',
     createOrg: '建立共享空間',
     joinOrg: '加入共享空間',
     name: '共享空間名稱',

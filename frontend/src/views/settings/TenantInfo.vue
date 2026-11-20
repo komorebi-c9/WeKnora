@@ -300,9 +300,8 @@ const showLeaveDangerZone = computed(() => {
 })
 
 const showDeleteDangerZone = computed(() => {
-  if (loading.value || error.value || !tenantInfo.value) return false
-  if (Number(tenantInfo.value.id) !== activeTenantNumericId.value) return false
-  return authStore.hasRole('owner')
+  // 禁止删除工作空间：隐藏"删除当前空间"入口，保留退出空间能力。
+  return false
 })
 
 async function evaluateLeaveGate(): Promise<void> {

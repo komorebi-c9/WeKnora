@@ -27,18 +27,6 @@
         </div>
         <div class="model-header-actions">
           <t-button
-            v-if="authStore.isSystemAdmin"
-            type="button"
-            theme="default"
-            variant="text"
-            size="small"
-            class="model-header-action"
-            @click="uiStore.openSettings('model-catalog')"
-          >
-            <template #icon><t-icon name="control-platform" /></template>
-            {{ $t('modelCatalog.title') }}
-          </t-button>
-          <t-button
             v-if="authStore.hasRole('admin')"
             type="button"
             theme="default"
@@ -50,8 +38,8 @@
             <template #icon><play-circle-icon /></template>
             {{ $t('modelSettings.actions.debugModel') }}
           </t-button>
-          <t-button v-if="authStore.hasRole('admin')" theme="default" variant="text" size="small"
-            class="model-header-action" @click="openAddDialog">
+          <t-button v-if="authStore.hasRole('admin') && !orionModelEnabled" theme="default" variant="text"
+            size="small" class="model-header-action" @click="openAddDialog">
             <template #icon><add-icon /></template>
             {{ $t('modelSettings.actions.addModel') }}
           </t-button>
@@ -59,6 +47,51 @@
       </div>
       <p class="section-description">{{ $t('modelSettings.description') }}</p>
     </div>
+
+    <div v-if="orionModelEnabled" class="orion-sync-bar" :class="{ 'orion-sync-bar--warning': orionKeyMissing }"
+      data-guide="orion-model-sync">
+      <div class="orion-sync-bar__info">
+        <t-icon name="cloud" size="16px" />
+        <span class="orion-sync-bar__title">{{ $t('modelSettings.orion.title') }}</span>
+        <span class="orion-sync-bar__meta">{{ orionStatusText }}</span>
+      </div>
+      <div class="orion-sync-bar__actions">
+        <t-button v-if="authStore.isSystemAdmin" size="small" variant="outline"
+          @click="openOrionKeyDialog">
+          <template #icon><t-icon name="setting" size="14px" /></template>
+          {{ $t('modelSettings.orion.configureKey') }}
+        </t-button>
+        <t-button v-if="authStore.hasRole('admin')" size="small" variant="outline" :loading="orionSyncing"
+          @click="refreshFromOrion">
+          {{ $t('modelSettings.orion.syncNow') }}
+        </t-button>
+      </div>
+    </div>
+    <div v-if="orionModelEnabled && orionKeyMissing" class="orion-sync-bar orion-sync-bar--warning">
+      <div class="orion-sync-bar__info">
+        <t-icon name="error-circle" size="16px" />
+        <span class="orion-sync-bar__meta">{{ $t('modelSettings.orion.keyMissing') }}</span>
+      </div>
+      <t-button v-if="authStore.isSystemAdmin" size="small" variant="outline"
+        @click="openOrionKeyDialog">
+        {{ $t('modelSettings.orion.configureKey') }}
+      </t-button>
+    </div>
+
+    <!-- 全局 Orion API Key 配置（仅平台管理员） -->
+    <t-dialog v-model:visible="orionKeyDialogVisible" :header="$t('modelSettings.orion.apiKeyTitle')"
+      :confirm-btn="{ content: $t('common.save'), loading: orionKeySaving }" width="480px"
+      @confirm="saveOrionKey">
+      <t-form label-align="top">
+        <t-form-item :label="$t('modelSettings.orion.apiKeyLabel')">
+          <t-input v-model="orionKeyInput" type="password" :placeholder="$t('modelSettings.orion.apiKeyPlaceholder')"
+            :status="orionKeyInvalid ? 'error' : undefined"
+            clearable />
+        </t-form-item>
+        <p v-if="orionKeyHint" class="orion-key-hint">{{ $t('modelSettings.orion.apiKeyCurrent', { hint: orionKeyHint }) }}</p>
+        <p class="orion-key-hint">{{ $t('modelSettings.orion.apiKeyHint') }}</p>
+      </t-form>
+    </t-dialog>
 
     <div class="model-tabbar" data-guide="settings-models">
       <t-tabs v-model="activeTypeFilter" class="model-type-tabs">
@@ -84,7 +117,8 @@
           <t-empty :description="$t('common.noResult')" />
           <t-button variant="outline" @click="modelQuery = ''">{{ $t('common.clear') }}</t-button>
         </div>
-        <div v-else-if="!loading && filteredModels.length === 0 && !authStore.hasRole('admin')" class="empty-state">
+        <div v-else-if="!loading && filteredModels.length === 0 && (!authStore.hasRole('admin') || orionModelEnabled)"
+          class="empty-state">
           <t-empty :description="emptyHint" />
         </div>
         <div v-else-if="!loading" class="model-grid">
@@ -107,6 +141,10 @@
                 <span v-if="model.isBuiltin" class="model-card__lock" :title="$t('modelSettings.builtinTag')"
                   :aria-label="$t('modelSettings.builtinTag')">
                   <t-icon :name="authStore.isSystemAdmin ? 'edit-1' : 'lock-on'" />
+                </span>
+                <span v-if="model.managedBy === 'orion'" class="model-card__orion"
+                  :title="$t('modelSettings.orion.managedHint')" :aria-label="$t('modelSettings.orion.tag')">
+                  <t-tag size="small" variant="light" theme="primary">{{ $t('modelSettings.orion.tag') }}</t-tag>
                 </span>
                 <div v-if="canManageModel(model)" class="model-card__actions" @click.stop>
                   <t-dropdown :options="getModelOptions(model._modelType, model)" placement="bottom-right" attach="body"
@@ -168,7 +206,7 @@
             </div>
           </div>
           <button
-            v-if="authStore.hasRole('admin')"
+            v-if="authStore.hasRole('admin') && !orionModelEnabled"
             type="button"
             class="model-card model-card--add"
             data-guide="settings-add-model"
@@ -325,6 +363,12 @@ import {
   copyModelConfig,
   updateModel as updateModelAPI,
   deleteModel as deleteModelAPI,
+  getOrionModelStatus,
+  syncOrionModels,
+  getOrionAPIKey,
+  saveOrionAPIKey,
+  type OrionModelStatus,
+  type OrionAPIKeyState,
   ModelInUseError,
   modelUsageBindingI18nKey,
   modelUsageKnowledgeBaseSection,
@@ -336,6 +380,7 @@ import {
   type ModelUsageResourceKind,
 } from '@/api/model'
 import { useAuthStore } from '@/stores/auth'
+import { getAuthConfig } from '@/api/auth'
 import { generateCopyDisplayName, modelCopyLabel } from '@/utils/modelCopyName'
 import { useUIStore } from '@/stores/ui'
 import { focusKbEditorSection } from '@/config/contextualGuides'
@@ -396,6 +441,123 @@ watch(
 const allModels = ref<ModelConfig[]>([])
 const copyingModelId = ref<string | null>(null)
 
+// Orion 托管模式：开关来自 /auth/config，状态来自 /models/orion/status。
+// 两者缺一不可——开关决定是否只读，状态决定空态与提示文案。
+const orionModelEnabled = ref(false)
+const orionStatus = ref<OrionModelStatus | null>(null)
+const orionSyncing = ref(false)
+const orionKeyMissing = computed(() =>
+  orionModelEnabled.value && !!orionStatus.value && !orionStatus.value.key_configured,
+)
+
+// 全局 Orion API Key 配置（仅平台管理员）。保存是同步请求；保存成功后后端
+// 在后台异步触发一次全量同步，此处只需刷新状态条。
+const orionKeyDialogVisible = ref(false)
+const orionKeySaving = ref(false)
+const orionKeyInput = ref('')
+const orionKeyHint = ref('')
+const orionKeyInvalid = computed(() =>
+  orionKeyDialogVisible.value && orionKeyInput.value.trim().length === 0,
+)
+
+const formatSyncTime = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(String(locale.value || ''))
+}
+
+const orionStatusText = computed(() => {
+  const status = orionStatus.value
+  if (!status) return t('modelSettings.orion.statusUnknown')
+  if (!status.key_configured) return t('modelSettings.orion.keyNotConfigured')
+  const parts = [t('modelSettings.orion.modelCount', { count: status.model_count })]
+  if (status.last_sync_at) {
+    parts.push(t('modelSettings.orion.lastSync', { time: formatSyncTime(status.last_sync_at) }))
+  }
+  if (status.last_error) {
+    parts.push(t('modelSettings.orion.lastError', { error: status.last_error }))
+  }
+  return parts.join(' · ')
+})
+
+const loadOrionState = async () => {
+  try {
+    const config = await getAuthConfig()
+    orionModelEnabled.value = !!config.orion_model_enabled
+  } catch {
+    orionModelEnabled.value = false
+  }
+  if (!orionModelEnabled.value) return
+  try {
+    orionStatus.value = await getOrionModelStatus()
+  } catch {
+    // 状态条只是辅助信息，读取失败不影响模型列表本身。
+    orionStatus.value = null
+  }
+  if (authStore.isSystemAdmin) {
+    try {
+      const keyState: OrionAPIKeyState = await getOrionAPIKey()
+      orionKeyHint.value = keyState.key_hint || ''
+    } catch {
+      orionKeyHint.value = ''
+    }
+  }
+}
+
+const openOrionKeyDialog = async () => {
+  orionKeyInput.value = ''
+  orionKeyDialogVisible.value = true
+  if (!orionKeyHint.value && authStore.isSystemAdmin) {
+    try {
+      const keyState = await getOrionAPIKey()
+      orionKeyHint.value = keyState.key_hint || ''
+    } catch {
+      orionKeyHint.value = ''
+    }
+  }
+}
+
+const saveOrionKey = async () => {
+  const apiKey = orionKeyInput.value.trim()
+  if (!apiKey || orionKeySaving.value) return
+  orionKeySaving.value = true
+  try {
+    await saveOrionAPIKey(apiKey)
+    orionKeyDialogVisible.value = false
+    MessagePlugin.success(t('modelSettings.orion.apiKeySaved'))
+    orionStatus.value = await getOrionModelStatus().catch(() => orionStatus.value)
+    if (authStore.isSystemAdmin) {
+      orionKeyHint.value = await getOrionAPIKey()
+        .then((state) => state.key_hint || '')
+        .catch(() => orionKeyHint.value)
+    }
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('modelSettings.orion.apiKeySaveFailed'))
+  } finally {
+    orionKeySaving.value = false
+  }
+}
+
+const refreshFromOrion = async () => {
+  if (orionSyncing.value) return
+  orionSyncing.value = true
+  try {
+    const result = await syncOrionModels()
+    MessagePlugin.success(t('modelSettings.orion.syncSuccess', {
+      count: result.total,
+      created: result.created,
+      deleted: result.deleted,
+    }))
+    await loadModels()
+    orionStatus.value = await getOrionModelStatus().catch(() => orionStatus.value)
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('modelSettings.orion.syncFailed'))
+  } finally {
+    orionSyncing.value = false
+  }
+}
+
 // 后端 type → 前端分组 type 的映射
 const backendTypeToModelType: Record<string, ModelType> = {
   KnowledgeQA: 'chat',
@@ -423,6 +585,7 @@ function convertToLegacyFormat(model: ModelConfig) {
     dimension: model.parameters.embedding_parameters?.dimension,
     supportsDimensionOverride: model.parameters.embedding_parameters?.supports_dimension_override || false,
     isBuiltin: model.is_builtin || false,
+    managedBy: model.managed_by || '',
     supportsVision: model.parameters.supports_vision || false,
     contextWindow: model.parameters.context_window || undefined,
     maxConcurrency: model.parameters.max_concurrency,
@@ -544,6 +707,12 @@ const contextWindowTitle = (tokens?: number) => {
 }
 
 const emptyHint = computed(() => {
+  // Orion 模式下空列表只有两种解释：还没同步，或该用户没有 Orion 凭证。
+  if (orionModelEnabled.value) {
+    return orionKeyMissing.value
+      ? t('modelSettings.orion.keyMissing')
+      : t('modelSettings.orion.empty')
+  }
   if (activeTypeFilter.value === 'all') return t('modelSettings.chat.empty')
   const map: Record<ModelType, string> = {
     chat: t('modelSettings.chat.empty'),
@@ -583,8 +752,11 @@ const openAddDialog = () => {
 
 // Tenant Admin+ manages tenant models; only SystemAdmin manages shared
 // built-in models. The backend repeats this distinction authoritatively.
-const canEditModel = (model: any) =>
-  model.isBuiltin ? authStore.isSystemAdmin : authStore.hasRole('admin')
+// Orion-synced rows are never editable here: Orion owns their lifecycle.
+const canEditModel = (model: any) => {
+  if (orionModelEnabled.value || model.managedBy === 'orion') return false
+  return model.isBuiltin ? authStore.isSystemAdmin : authStore.hasRole('admin')
+}
 
 const isModelCardClickable = (model: any) => canEditModel(model)
 
@@ -593,6 +765,7 @@ const canManageModel = (model: any) => canEditModel(model)
 // Built-in lifecycle remains deployment-managed (YAML / SQL). The UI only
 // exposes configuration and credential editing to SystemAdmin.
 const canDeleteModel = (model: any) =>
+  !orionModelEnabled.value && model.managedBy !== 'orion' &&
   authStore.hasRole('admin') && !model.isBuiltin
 
 const onModelCardClick = (event: Event, type: ModelType, model: any) => {
@@ -842,6 +1015,11 @@ const openUsageResource = async (
 const getModelOptions = (type: ModelType, model: any) => {
   const options: any[] = []
 
+  // Orion 托管行不可编辑/复制/删除，菜单直接为空。
+  if (orionModelEnabled.value || model.managedBy === 'orion') {
+    return options
+  }
+
   if (model.isBuiltin) {
     if (authStore.isSystemAdmin) {
       options.push({
@@ -961,7 +1139,7 @@ watch(showDialog, (open) => {
 watch(() => route.query.model_id, openRequestedModel)
 
 onMounted(async () => {
-  await loadModels()
+  await Promise.all([loadModels(), loadOrionState()])
   openRequestedModel()
 })
 useAssistantDataChange(() => { void loadModels() }, { areas: ['model'] })
@@ -979,6 +1157,63 @@ useAssistantDataChange(() => { void loadModels() }, { areas: ['model'] })
   flex-direction: column;
   color: var(--td-text-color-primary);
   container-type: inline-size;
+}
+
+.orion-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px;
+  background: var(--td-bg-color-container);
+  flex-shrink: 0;
+
+  &__info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__title {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    color: var(--td-text-color-secondary);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &--warning {
+    border-color: var(--td-warning-color);
+    background: var(--td-warning-color-light);
+  }
+}
+
+.orion-key-hint {
+  margin: 4px 0 0;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.model-card__orion {
+  display: inline-flex;
+  align-items: center;
 }
 
 .section-header {

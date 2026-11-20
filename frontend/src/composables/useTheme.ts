@@ -4,6 +4,7 @@ import {
   savePreference,
   migratePreferencesIntoUser,
 } from './preferenceStorage'
+import { applyBrandPalette } from '../constants/brandPalette'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -65,6 +66,8 @@ function applyTheme(mode: ThemeMode) {
   if (lastEffective === effective) return
   lastEffective = effective
   document.documentElement.setAttribute('theme-mode', effective)
+  // 品牌色阶由 constants/brandPalette.ts 统一配置，随明暗模式切换重新注入。
+  applyBrandPalette(effective)
   syncWailsNativeChrome(effective)
 }
 

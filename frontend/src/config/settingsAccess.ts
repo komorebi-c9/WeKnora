@@ -137,5 +137,10 @@ export const HIDDEN_SETTINGS_NAV_KEYS = new Set<string>([
   'weknoracloud',
   'mymemory',
   'memory',
-  'data_extensions',
+  'vectorstore',
+  'storage',
+  'sandbox',
+  'websearch',
+  'model-catalog',
+  'platform-api-keys',
 ])

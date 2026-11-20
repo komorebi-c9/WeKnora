@@ -253,7 +253,8 @@ export default {
       agents: '{count} 智能体'
     },
     title: '共享空间',
-    subtitle: '创建或加入共享空间，让多个空间互相协作，共享知识库与智能体',
+    // subtitle: '创建或加入共享空间，让多个空间互相协作，共享知识库与智能体',
+    subtitle: '创建或加入共享空间，让多个空间互相协作，共享知识库',
     createOrg: '创建共享空间',
     joinOrg: '加入共享空间',
     name: '共享空间名称',

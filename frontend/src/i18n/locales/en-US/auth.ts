@@ -235,7 +235,7 @@ export default {
       agents: '{count} agents'
     },
     title: 'Shared Spaces',
-    subtitle: 'Create or join shared spaces so multiple workspaces can collaborate and share knowledge bases and agents',
+    subtitle: 'Create or join shared spaces so multiple workspaces can collaborate and share knowledge bases',
     createOrg: 'Create Shared Space',
     joinOrg: 'Join Shared Space',
     name: 'Shared Space Name',

@@ -900,12 +900,36 @@ func buildModelDescriptors(req *InitializationRequest) []modelDescriptor {
 	return descriptors
 }
 
+// orionModelMode reports whether Orion owns the model catalogue. In that mode
+// the wizard must not create, modify or probe models: the rows are read-only
+// and their credentials belong to the user, not to the wizard payload.
+func (h *InitializationHandler) orionModelMode() bool {
+	return h != nil && h.config != nil && h.config.OrionModel.IsEnabled()
+}
+
+// rejectInOrionModelMode answers the request with a clear error and reports
+// whether it did. Callers return immediately when it is true.
+func (h *InitializationHandler) rejectInOrionModelMode(c *gin.Context) bool {
+	if !h.orionModelMode() {
+		return false
+	}
+	c.Error(errors.NewBadRequestError(
+		"models are managed by Orion in this deployment; configure models in Orion instead of the initialization wizard",
+	))
+	return true
+}
+
 func (h *InitializationHandler) processInitializationModels(
 	ctx context.Context,
 	kb *types.KnowledgeBase,
 	kbIdStr string,
 	req *InitializationRequest,
 ) ([]*types.Model, error) {
+	if h.orionModelMode() {
+		return nil, errors.NewBadRequestError(
+			"models are managed by Orion in this deployment; configure models in Orion instead of the initialization wizard",
+		)
+	}
 	descriptors := buildModelDescriptors(req)
 	var processedModels []*types.Model
 
@@ -1131,6 +1155,9 @@ func extractModelIDs(processedModels []*types.Model) (embeddingModelID, llmModel
 // @Success      200  {object}  map[string]interface{}  "Ollama状态"
 // @Router       /initialization/ollama/status [get]
 func (h *InitializationHandler) CheckOllamaStatus(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Checking Ollama service status")
@@ -1186,6 +1213,9 @@ func (h *InitializationHandler) CheckOllamaStatus(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /initialization/ollama/models/check [post]
 func (h *InitializationHandler) CheckOllamaModels(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Checking Ollama models status")
@@ -1248,6 +1278,9 @@ func (h *InitializationHandler) CheckOllamaModels(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /initialization/ollama/models/download [post]
 func (h *InitializationHandler) DownloadOllamaModel(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Starting async Ollama model download")
@@ -1418,6 +1451,9 @@ func (h *InitializationHandler) ListDownloadTasks(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /initialization/ollama/models [get]
 func (h *InitializationHandler) ListOllamaModels(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Listing installed Ollama models")
@@ -1992,6 +2028,9 @@ func (h *InitializationHandler) resolveTenantWeKnoraCloudCreds(ctx context.Conte
 // @Security     ApiKeyAuth
 // @Router       /initialization/remote/check [post]
 func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Checking remote model connection")
@@ -2049,6 +2088,9 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /initialization/embedding/test [post]
 func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Testing embedding model connectivity and functionality")
@@ -2245,6 +2287,9 @@ func (h *InitializationHandler) checkRerankModelConnection(
 // @Security     ApiKeyAuth
 // @Router       /initialization/rerank/check [post]
 func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Checking rerank model connection and functionality")
@@ -2309,6 +2354,9 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /initialization/asr/check [post]
 func (h *InitializationHandler) CheckASRModel(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Checking ASR model connection")
@@ -2447,6 +2495,9 @@ type testMultimodalForm struct {
 // @Security     ApiKeyAuth
 // @Router       /initialization/multimodal/test [post]
 func (h *InitializationHandler) TestMultimodalFunction(c *gin.Context) {
+	if h.rejectInOrionModelMode(c) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	logger.Info(ctx, "Testing multimodal functionality")

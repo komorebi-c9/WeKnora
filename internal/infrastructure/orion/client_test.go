@@ -49,6 +49,25 @@ func TestMeParsesIdentity(t *testing.T) {
 	if id.Status == nil || *id.Status != 1 {
 		t.Fatalf("status = %v, want 1", id.Status)
 	}
+	if id.IsAdmin == nil || !*id.IsAdmin {
+		t.Fatalf("is_admin = %v, want true", id.IsAdmin)
+	}
+}
+
+func TestMeAdminMayBeAbsent(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"code":200,"data":{"id":7,"orgId":2,"username":"bob"}}`))
+	})
+
+	id, err := client.Me(context.Background(), "a")
+	if err != nil {
+		t.Fatalf("Me() error = %v", err)
+	}
+	if id.IsAdmin != nil {
+		t.Fatalf("is_admin = %v, want nil so callers assume false", *id.IsAdmin)
+	}
 }
 
 func TestMeStatusMayBeAbsent(t *testing.T) {
@@ -69,7 +88,7 @@ func TestMeStatusMayBeAbsent(t *testing.T) {
 
 // TestMeIgnoresOrganisation proves the identity no longer depends on the
 // org fields: WeKnora builds a personal workspace per user, so a response
-// without orgId/orgName/isAdmin must still parse.
+// without orgId/orgName must still parse.
 func TestMeIgnoresOrganisation(t *testing.T) {
 	t.Parallel()
 

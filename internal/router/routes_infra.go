@@ -15,11 +15,21 @@ func RegisterModelRoutes(
 	r *gin.RouterGroup,
 	handler *handler.ModelHandler,
 	credHandler *handler.ModelCredentialsHandler,
+	orionHandler *handler.OrionModelHandler,
 	g *rbacGuards,
 ) {
 	// 模型路由组。空间级基础设施：仅完全访问（Owner）API key 可访问。
 	models := g.apiKeyGroup(r.Group("/models"), apiKeyManageModels(apiKeyFullAccess()))
 	{
+		// Orion 目录同步：状态 Viewer+，手动刷新 Admin+。这几条必须注册在
+		// /:id 之前，否则 "orion" 会被当成模型 id。
+		if orionHandler != nil {
+			models.GET("/orion/status", g.Viewer(), orionHandler.Status)
+			models.POST("/orion/sync", g.Admin(), orionHandler.Sync)
+			// 全局凭证（所有工作空间共用）：仅平台管理员可读（掩码）/写。
+			models.GET("/orion/api-key", g.SystemAdmin(), orionHandler.GetAPIKey)
+			models.PUT("/orion/api-key", g.SystemAdmin(), orionHandler.SaveAPIKey)
+		}
 		// 获取模型厂商列表 — Viewer+
 		models.GET("/providers", g.Viewer(), handler.ListModelProviders)
 		models.GET("/providers/:provider", g.Viewer(), handler.GetModelProvider)

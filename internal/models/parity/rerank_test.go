@@ -486,7 +486,7 @@ func TestScoreScaleIsOverridablePerRow(t *testing.T) {
 // their own documentation and must not offer a switch that only lets an
 // operator get it wrong.
 func TestGatewayVendorsOfferTheScoreScaleOverride(t *testing.T) {
-	gateways := map[string]bool{"generic": true, "gpustack": true, "litellm": true}
+	gateways := map[string]bool{"generic": true, "gpustack": true, "litellm": true, "orion": true}
 
 	for _, v := range modelruntime.ListByType(types.ModelTypeRerank) {
 		var field *providers.ExtraField

@@ -2,10 +2,11 @@
 //
 // WeKnora treats Orion as its only identity provider. The single call this
 // package makes is GET /orion/api/auth/current, which validates the caller's
-// NS-TOKEN and returns the current user. Only the user identity is consumed:
-// WeKnora gives every mirrored user their own personal workspace, so the
-// organisation Orion reports (and any admin flag on the org membership) is
-// deliberately ignored.
+// NS-TOKEN and returns the current user's details. The user identity is
+// consumed, including the org-admin flag: an Orion administrator is mirrored
+// as a WeKnora system administrator. The organisation itself (orgId/orgName)
+// is still ignored — WeKnora gives every mirrored user their own personal
+// workspace, so the org membership is not mapped onto a shared workspace.
 package orion
 
 import (
@@ -41,16 +42,18 @@ var (
 
 // Identity is the caller's identity as reported by Orion.
 //
-// Only the fields WeKnora actually stores are mapped. Orion also returns the
-// organisation the caller belongs to (orgId/orgName) and whether they
-// administer it (isAdmin); both are intentionally ignored, because every
-// mirrored user gets a personal workspace of their own rather than sharing
-// their Orion organisation's one.
+// The org-admin flag is consumed: an Orion administrator becomes a WeKnora
+// system administrator. The organisation the caller belongs to (orgId/orgName)
+// is still ignored, because every mirrored user gets a personal workspace of
+// their own rather than sharing their Orion organisation's one.
 type Identity struct {
 	ID       int64
 	Username string
 	Email    *string
 	Avatar   *string
+	// IsAdmin mirrors Orion's org-admin flag. Nil means Orion did not
+	// report it; callers must then assume false.
+	IsAdmin *bool
 	// Status mirrors iam_user.status: 1 normal, 2 locked, 3 cancelled.
 	// Nil means Orion did not report it; callers must then assume normal
 	// rather than rejecting the login.
@@ -102,8 +105,8 @@ type envelope struct {
 
 // mePayload mirrors the subset of Orion's CurrentUser that WeKnora stores.
 // Field names are camelCase because the Rust struct is serialised with
-// #[serde(rename_all = "camelCase")]. Unknown keys (orgId, orgName, isAdmin,
-// roles, permissions, ...) are ignored by encoding/json on purpose.
+// #[serde(rename_all = "camelCase")]. Unknown keys (orgId, orgName, roles,
+// permissions, ...) are ignored by encoding/json on purpose.
 type mePayload struct {
 	ID       int64   `json:"id"`
 	Name     string  `json:"name"`
@@ -111,6 +114,7 @@ type mePayload struct {
 	Email    *string `json:"email"`
 	Avatar   *string `json:"avatar"`
 	Status   *int    `json:"status"`
+	IsAdmin  *bool   `json:"isAdmin"`
 }
 
 // Me validates assertion against Orion and returns the caller's identity.
@@ -179,5 +183,6 @@ func (c *HTTPClient) Me(ctx context.Context, assertion string) (*Identity, error
 		Email:    payload.Email,
 		Avatar:   payload.Avatar,
 		Status:   payload.Status,
+		IsAdmin:  payload.IsAdmin,
 	}, nil
 }

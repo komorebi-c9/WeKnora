@@ -94,13 +94,25 @@ func (s *userService) LoginWithOrion(ctx context.Context, assertion string) (*ty
 //
 // The provisioning steps are deliberately the same ones Register uses: create a
 // personal workspace, create the account inside it, then make the account the
-// owner. Existing accounts are returned untouched — no workspace, username,
-// role or platform-admin flag is rewritten on a later login.
+// owner. Existing accounts keep their workspace, username, role and platform
+//-admin flag unless Orion promotes them: an Orion admin (is_admin=true) is
+// mirrored as a WeKnora system administrator. The flag is only ever granted,
+// never revoked automatically, so demoting someone in Orion cannot silently
+// strip a WeKnora platform administrator.
 func (s *userService) ensureOrionAccount(
 	ctx context.Context, identity *orion.Identity,
 ) (*types.User, error) {
 	userID := strconv.FormatInt(identity.ID, 10)
 	if existing, err := s.userRepo.GetUserByID(ctx, userID); err == nil && existing != nil {
+		if identity.IsAdmin != nil && *identity.IsAdmin && !existing.IsSystemAdmin {
+			existing.IsSystemAdmin = true
+			if updateErr := s.userRepo.UpdateUser(ctx, existing); updateErr != nil {
+				logger.Errorf(ctx, "Failed to grant system admin to Orion user %s: %v",
+					userID, updateErr)
+				return nil, updateErr
+			}
+			logger.Infof(ctx, "Orion user %s is an org admin; granted WeKnora system admin", userID)
+		}
 		return existing, nil
 	}
 
@@ -126,9 +138,9 @@ func (s *userService) ensureOrionAccount(
 		PasswordHash: orionPasswordPrefix + uuid.NewString(),
 		TenantID:     tenant.ID,
 		IsActive:     true,
-		// Orion exposes no platform-admin flag WeKnora acts on, so every
-		// mirrored account is a plain member of the platform.
-		IsSystemAdmin: false,
+		// An Orion org administrator is mirrored as a WeKnora system
+		// administrator; a plain Orion member stays a plain member here.
+		IsSystemAdmin: identity.IsAdmin != nil && *identity.IsAdmin,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -162,6 +174,13 @@ func (s *userService) ensureOrionAccount(
 	}
 
 	logger.Infof(ctx, "Provisioned Orion user %s with personal workspace %d", userID, tenant.ID)
+
+	// The fresh workspace starts with no models. Kick off a background
+	// reconciliation against the shared global Orion api key so the first
+	// login already sees the catalogue instead of waiting for the periodic
+	// sweep. Failure is non-fatal: login proceeds and the runner retries.
+	s.modelSync.SyncTenantBackground(tenant.ID)
+
 	return user, nil
 }
 

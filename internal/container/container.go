@@ -136,6 +136,14 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Core infrastructure configuration
 	logger.Debugf(ctx, "[Container] Registering core infrastructure...")
 	must(container.Provide(config.LoadConfig))
+	// The Orion model switch is a section of the app config; exposing it as its
+	// own type keeps constructors free of the whole Config.
+	must(container.Provide(func(cfg *config.Config) *config.OrionModelConfig {
+		if cfg == nil || cfg.OrionModel == nil {
+			return &config.OrionModelConfig{}
+		}
+		return cfg.OrionModel
+	}))
 	must(container.Provide(initLangfuse))
 	must(container.Provide(initDatabase))
 	must(container.Provide(initFileService))
@@ -181,6 +189,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewUserRepository))
 	must(container.Provide(repository.NewAuthTokenRepository))
 	must(container.Provide(repository.NewSystemSettingRepository))
+	// The platform-wide Orion credential store (system_settings row
+	// "orion.api_key", encrypted at rest).
+	must(container.Provide(service.NewOrionCredentialStore))
 	must(container.Provide(repository.NewModelCatalogRepository))
 	must(container.Provide(neo4jRepo.NewNeo4jRepository))
 	must(container.Provide(neo4jRepo.NewGraphSearchRepository))
@@ -277,7 +288,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewChunkService))
 	must(container.Provide(service.NewKnowledgeTagService))
 	must(container.Provide(embedding.NewBatchEmbedder))
-	must(container.Provide(service.NewModelService))
+	must(container.Provide(initModelService))
+	must(container.Provide(service.NewOrionModelSync))
+	must(container.Provide(service.NewOrionModelSyncRunner))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewUserService))
@@ -563,6 +576,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	logger.Debugf(ctx, "[Container] Data source sync framework registered")
 	must(container.Invoke(startAuditLogRetention))
 	logger.Debugf(ctx, "[Container] Audit log retention runner registered")
+	must(container.Invoke(startOrionModelSync))
+	logger.Debugf(ctx, "[Container] Orion model sync runner registered")
 	must(container.Provide(service.NewHousekeepingService))
 	must(container.Invoke(startHousekeepingService))
 	logger.Debugf(ctx, "[Container] Knowledge housekeeping runner registered")
@@ -699,6 +714,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewMessageSuggestionHandler))
 	must(container.Provide(handler.NewModelHandler))
+	must(container.Provide(handler.NewOrionModelHandler))
 	must(container.Provide(handler.NewSandboxConfigHandler))
 	must(container.Provide(func(
 		s *service.TenantSkillService, streams interfaces.StreamManager,
@@ -2321,6 +2337,36 @@ func startTemporaryDocumentCleanup(svc interfaces.TemporaryDocumentService, clea
 // retention_days <= 0 is the configured way to disable retention;
 // the runner short-circuits Start() on that path so we don't need
 // to gate the wiring here.
+// initModelService builds the model service and layers the Orion
+// visibility/write policy on top. The wrapper is always installed so that
+// Orion-synced rows stay hidden when the switch is off (they must not pollute
+// the original model list); with the switch off every other behaviour is
+// unchanged.
+func initModelService(
+	repo interfaces.ModelRepository,
+	kbRepo interfaces.KnowledgeBaseRepository,
+	agentRepo interfaces.CustomAgentRepository,
+	ollamaService *ollama.OllamaService,
+	pooler embedding.EmbedderPooler,
+	tenantService interfaces.TenantService,
+	orionCfg *config.OrionModelConfig,
+) interfaces.ModelService {
+	inner := service.NewModelService(repo, kbRepo, agentRepo, ollamaService, pooler, tenantService)
+	return service.NewOrionAwareModelService(inner, orionCfg, repo)
+}
+
+// startOrionModelSync runs the first Orion catalogue sync in the background and
+// keeps it on a cadence. Start is a no-op when the switch is off.
+func startOrionModelSync(
+	runner *service.OrionModelSyncRunner, cleaner interfaces.ResourceCleaner,
+) {
+	runner.Start(context.Background())
+	cleaner.RegisterWithName("OrionModelSyncRunner", func() error {
+		runner.StopWithin(cleanupStepTimeout)
+		return nil
+	})
+}
+
 func startAuditLogRetention(
 	runner *service.AuditLogRetentionRunner, cleaner interfaces.ResourceCleaner,
 ) {

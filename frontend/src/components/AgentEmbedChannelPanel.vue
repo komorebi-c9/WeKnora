@@ -429,6 +429,7 @@ import {
 } from '@/utils/embedAllowedOrigins'
 import type { CustomAgent } from '@/api/agent'
 import { useChatResourcesStore } from '@/stores/chatResources'
+import { BRAND_PRIMARY } from '@/constants/brandPalette'
 import IntegrationsAgentFilter from '@/components/IntegrationsAgentFilter.vue'
 
 const filterAgentId = defineModel<string>('filterAgentId', { default: '' })
@@ -491,7 +492,7 @@ const agentImageUploadEnabledEffective = computed(() =>
   drawerAgent.value?.config?.image_upload_enabled === true,
 )
 
-const WEKNORA_BRAND_COLOR = '#07C05F'
+const WEKNORA_BRAND_COLOR = BRAND_PRIMARY
 
 function getDefaultEmbedPrimaryColor(): string {
   if (typeof window === 'undefined') return WEKNORA_BRAND_COLOR

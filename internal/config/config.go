@@ -18,17 +18,22 @@ import (
 
 // Config 应用程序总配置
 type Config struct {
-	Conversation    *ConversationConfig    `yaml:"conversation"     json:"conversation"`
-	Server          *ServerConfig          `yaml:"server"           json:"server"`
-	KnowledgeBase   *KnowledgeBaseConfig   `yaml:"knowledge_base"   json:"knowledge_base"`
-	Tenant          *TenantConfig          `yaml:"tenant"           json:"tenant"`
-	Auth            *AuthConfig            `yaml:"auth"             json:"auth"`
-	Audit           *AuditConfig           `yaml:"audit"            json:"audit"`
-	OIDCAuth        *OIDCAuthConfig        `yaml:"oidc_auth"        json:"oidc_auth"`
+	Conversation  *ConversationConfig  `yaml:"conversation"     json:"conversation"`
+	Server        *ServerConfig        `yaml:"server"           json:"server"`
+	KnowledgeBase *KnowledgeBaseConfig `yaml:"knowledge_base"   json:"knowledge_base"`
+	Tenant        *TenantConfig        `yaml:"tenant"           json:"tenant"`
+	Auth          *AuthConfig          `yaml:"auth"             json:"auth"`
+	Audit         *AuditConfig         `yaml:"audit"            json:"audit"`
+	OIDCAuth      *OIDCAuthConfig      `yaml:"oidc_auth"        json:"oidc_auth"`
 	// OrionAuth configures Orion (LoLR) as WeKnora's identity provider.
 	// When enabled, the SPA no longer logs in locally: it exchanges an
 	// Orion assertion for a WeKnora session instead.
 	OrionAuth *OrionAuthConfig `yaml:"orion_auth" json:"orion_auth"`
+	// OrionModel switches model management to Orion: the catalogue is synced
+	// from Orion with each user's own credential and becomes read-only, and all
+	// inference goes through the Orion gateway. While disabled WeKnora behaves
+	// exactly as before.
+	OrionModel      *OrionModelConfig      `yaml:"orion_model" json:"orion_model"`
 	Models          []ModelConfig          `yaml:"models"           json:"models"`
 	VectorDatabase  *VectorDatabaseConfig  `yaml:"vector_database"  json:"vector_database"`
 	DocReader       *DocReaderConfig       `yaml:"docreader"        json:"docreader"`
@@ -444,6 +449,61 @@ func (c *OrionAuthConfig) Timeout() time.Duration {
 	return time.Duration(c.TimeoutSeconds) * time.Second
 }
 
+// OrionModelConfig describes how WeKnora sources models from Orion.
+//
+// There is deliberately no API key here: the credential is one platform-wide
+// Orion License SK configured at runtime by a system admin in the model
+// management page (persisted encrypted in system_settings under
+// "orion.api_key") and shared by every workspace. There is deliberately
+// no base URL either: Orion is one gateway service shared with the identity
+// side, so the origin comes from orion_auth.base_url (ORION_BASE_URL). Only
+// the model-specific knobs (sync cadence, timeout) belong here.
+type OrionModelConfig struct {
+	// Enable turns Orion into the single model source and inference gateway.
+	// While false the deployment behaves exactly as before.
+	Enable bool `yaml:"enable" json:"enable"`
+	// SyncIntervalSeconds is the periodic catalogue refresh; default 300 with a
+	// hard lower bound of 30 to protect Orion from a misconfigured typo.
+	SyncIntervalSeconds int `yaml:"sync_interval_seconds" json:"sync_interval_seconds"`
+	// TimeoutSeconds bounds one Orion round trip; default 10.
+	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
+	// SyncVision additionally materialises a VLLM row for every chat model,
+	// because Orion's catalogue has no dedicated vision type while WeKnora
+	// treats vision as its own selectable model type. Default true.
+	SyncVision bool `yaml:"sync_vision" json:"sync_vision"`
+}
+
+// IsEnabled reports whether Orion owns the model catalogue.
+func (c *OrionModelConfig) IsEnabled() bool {
+	return c != nil && c.Enable
+}
+
+// OrionBaseURL is the single Orion gateway origin, shared by the identity
+// side (orion_auth) and the model side (orion_model). Sourced from
+// orion_auth.base_url / ORION_BASE_URL.
+func (c *Config) OrionBaseURL() string {
+	if c == nil || c.OrionAuth == nil {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(c.OrionAuth.BaseURL), "/")
+}
+
+// SyncInterval returns the refresh period, defaulting to 5 minutes.
+func (c *OrionModelConfig) SyncInterval() time.Duration {
+	if c == nil || c.SyncIntervalSeconds <= 0 {
+		return 300 * time.Second
+	}
+	return time.Duration(c.SyncIntervalSeconds) * time.Second
+}
+
+// Timeout returns the upstream timeout, defaulting to 10 seconds.
+func (c *OrionModelConfig) Timeout() time.Duration {
+	if c == nil || c.TimeoutSeconds <= 0 {
+		return 10 * time.Second
+	}
+	return time.Duration(c.TimeoutSeconds) * time.Second
+}
+
 // IsLoginDisabled reports whether local login/registration must be absent.
 // It is true only when Orion is enabled and the operator did not ask for
 // the local login fallback.
@@ -717,6 +777,7 @@ func LoadConfig() (*Config, error) {
 	// Validate configuration values
 	applyOIDCEnvOverrides(&cfg)
 	applyOrionAuthEnvOverrides(&cfg)
+	applyOrionModelEnvOverrides(&cfg)
 	applyAgentEnvOverrides(&cfg)
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyNetworkEnvOverrides()
@@ -769,6 +830,16 @@ func ValidateConfig(cfg *Config) error {
 	if cfg.OrionAuth != nil && cfg.OrionAuth.Enable {
 		if strings.TrimSpace(cfg.OrionAuth.BaseURL) == "" {
 			errs = append(errs, "orion_auth.base_url is required when orion_auth is enabled")
+		}
+	}
+
+	if cfg.OrionModel != nil && cfg.OrionModel.Enable {
+		// Failing fast is intentional: a half-configured switch would silently
+		// keep serving models from the old providers while the operator
+		// believes every call now goes through Orion. The origin is shared
+		// with the identity side, so orion_auth.base_url must be present.
+		if cfg.OrionBaseURL() == "" {
+			errs = append(errs, "orion_auth.base_url is required when orion_model is enabled")
 		}
 	}
 
@@ -932,6 +1003,47 @@ func applyOrionAuthEnvOverrides(cfg *Config) {
 	}
 	if cfg.OrionAuth.TimeoutSeconds <= 0 {
 		cfg.OrionAuth.TimeoutSeconds = 5
+	}
+}
+
+// applyOrionModelEnvOverrides layers ORION_MODEL_* env vars over the YAML
+// block. There is no ORION_MODEL_BASE_URL on purpose: the origin is the same
+// Orion gateway the identity side uses, configured once via ORION_BASE_URL.
+func applyOrionModelEnvOverrides(cfg *Config) {
+	if cfg.OrionModel == nil {
+		// Vision rows default on: Orion has no dedicated vision type, so without
+		// them knowledge-base image understanding has nothing to select.
+		cfg.OrionModel = &OrionModelConfig{SyncVision: true}
+	}
+
+	if value := strings.TrimSpace(os.Getenv("ORION_MODEL_ENABLE")); value != "" {
+		cfg.OrionModel.Enable = strings.EqualFold(value, "true")
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_MODEL_SYNC_INTERVAL_SECONDS")); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil {
+			cfg.OrionModel.SyncIntervalSeconds = seconds
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_MODEL_TIMEOUT_SECONDS")); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil {
+			cfg.OrionModel.TimeoutSeconds = seconds
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv("ORION_MODEL_SYNC_VISION")); value != "" {
+		cfg.OrionModel.SyncVision = strings.EqualFold(value, "true")
+	}
+
+	// A sync interval below the floor is almost certainly a unit mistake
+	// (seconds written where minutes were meant); clamp instead of hammering
+	// Orion, and keep an unset value on the documented default.
+	if cfg.OrionModel.SyncIntervalSeconds <= 0 {
+		cfg.OrionModel.SyncIntervalSeconds = 300
+	}
+	if cfg.OrionModel.SyncIntervalSeconds < 30 {
+		cfg.OrionModel.SyncIntervalSeconds = 30
+	}
+	if cfg.OrionModel.TimeoutSeconds <= 0 {
+		cfg.OrionModel.TimeoutSeconds = 10
 	}
 }
 
