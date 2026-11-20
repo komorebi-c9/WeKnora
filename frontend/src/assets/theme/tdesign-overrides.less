@@ -68,3 +68,12 @@
 .t-select-option.t-is-selected:not(.t-is-disabled):not(:has(.t-checkbox)) {
   gap: 8px;
 }
+
+// 品牌主色 #3fa9c9 明度较高，白字对比度仅 ≈2.7:1 不可读，Orion 规范对亮青
+// 主色的官方搭配是深墨文字（#06222b，≈6:1）。填充类按钮上的文字统一走品牌
+// 色板注入的 --app-on-brand（浅色/深色模式均为深墨，见 constants/brandPalette.ts）。
+// 仅命中实底按钮（variant-base），outline/dashed/ghost 等无品牌底色的变体不受影响。
+.t-button--variant-base:not(.t-button--ghost) {
+  color: var(--app-on-brand, var(--td-text-color-anti));
+}
+

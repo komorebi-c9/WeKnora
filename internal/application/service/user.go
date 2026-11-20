@@ -106,6 +106,10 @@ type userService struct {
 	config           *config.Config
 	systemSettingSvc interfaces.SystemSettingService
 	sandboxReleaser  SandboxOwnerReleaser
+	// modelSync populates a freshly provisioned workspace with the shared
+	// Orion catalogue; nil-safe, and only meaningful when Orion model mode
+	// is enabled.
+	modelSync *OrionModelSync
 }
 
 // NewUserService creates a new user service instance
@@ -116,6 +120,7 @@ func NewUserService(
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
 	systemSettingSvc interfaces.SystemSettingService,
+	modelSync *OrionModelSync,
 ) interfaces.UserService {
 	return &userService{
 		userRepo:         userRepo,
@@ -124,6 +129,7 @@ func NewUserService(
 		memberService:    memberService,
 		config:           configInfo,
 		systemSettingSvc: systemSettingSvc,
+		modelSync:        modelSync,
 	}
 }
 

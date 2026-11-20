@@ -188,9 +188,13 @@ type ModelResponse struct {
 	IsDefault   bool               `json:"is_default" extensions:"x-agent"`
 	DefaultFor  []string           `json:"default_for,omitempty" extensions:"x-agent"`
 	IsBuiltin   bool               `json:"is_builtin" extensions:"x-agent"`
-	Status      types.ModelStatus  `json:"status" extensions:"x-agent"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
+	// ManagedBy identifies the subsystem that owns this row's lifecycle.
+	// "orion" rows are read-only: the UI hides every editor for them and the
+	// API rejects writes while Orion owns the catalogue.
+	ManagedBy string            `json:"managed_by,omitempty" extensions:"x-agent"`
+	Status    types.ModelStatus `json:"status" extensions:"x-agent"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
 	// Per-field "configured?" map. Omitted for builtin models unless the
 	// caller is a system administrator. See MCPServiceResponse.Credentials.
 	Credentials map[string]CredentialFieldMetadata `json:"credentials,omitempty"`
@@ -317,7 +321,7 @@ func NewModelResponse(ctx context.Context, m *types.Model) *ModelResponse {
 		if resolved, err := modelruntime.Resolve(modelruntime.Ref{
 			Provider: m.Parameters.Provider, Model: m.Name, BaseURL: m.Parameters.BaseURL,
 			ModelType: m.Type, Extra: m.Parameters.ExtraConfig, Override: m.Parameters.Spec,
-		}); err == nil && m.Source == types.ModelSourceRemote {
+		}); err == nil && (m.Source == types.ModelSourceRemote || m.Source == types.ModelSourceOrion) {
 			c := resolved.Capabilities()
 			caps = &c
 		}
@@ -334,6 +338,7 @@ func NewModelResponse(ctx context.Context, m *types.Model) *ModelResponse {
 		IsDefault:    m.IsDefault,
 		DefaultFor:   m.DefaultFor,
 		IsBuiltin:    m.IsBuiltin,
+		ManagedBy:    m.ManagedBy,
 		Status:       m.Status,
 		CreatedAt:    m.CreatedAt,
 		UpdatedAt:    m.UpdatedAt,

@@ -922,6 +922,10 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 		// Neither the Orion base URL nor any credential is exposed here.
 		"orion_sso_enabled":      h.configInfo != nil && h.configInfo.OrionAuth.IsEnabled(),
 		"login_fallback_enabled": h.configInfo == nil || !h.configInfo.IsLoginDisabled(),
+		// Orion model mode: the SPA switches the model page to a read-only
+		// catalogue and hides every create/edit affordance. Only the switch is
+		// exposed — never the base URL or a credential.
+		"orion_model_enabled": h.configInfo != nil && h.configInfo.OrionModel.IsEnabled(),
 	})
 }
 

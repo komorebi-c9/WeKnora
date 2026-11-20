@@ -157,6 +157,20 @@ func (s *stubModelRepoForDelete) ClearDefaultByType(context.Context, uint, types
 	return nil
 }
 
+func (s *stubModelRepoForDelete) ListByManagedBy(context.Context, string, uint64) ([]*types.Model, error) {
+	return nil, nil
+}
+
+func (s *stubModelRepoForDelete) UpsertManaged(context.Context, *types.Model, string) error {
+	return nil
+}
+
+func (s *stubModelRepoForDelete) ReconcileManaged(
+	context.Context, uint64, string, []*types.Model, bool,
+) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
+
 func TestDeleteModel_RejectsWhenReferenced(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
 	modelID := "model-in-use"

@@ -820,6 +820,11 @@ func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting
 	// row visible would suggest it still controls runtime capacity, so retire it
 	// explicitly while preserving all genuinely unknown rows for diagnostics.
 	delete(byKey, "asynq.concurrency")
+	// orion.api_key is the encrypted platform-wide Orion credential. It is
+	// owned exclusively by OrionCredentialStore and the Orion model handler;
+	// showing the ciphertext row (or inviting edits) on the generic settings
+	// page would be misleading, so it is hidden here the same way.
+	delete(byKey, OrionAPIKeySettingKey)
 
 	keys := make([]string, 0, len(registry))
 	for key := range registry {

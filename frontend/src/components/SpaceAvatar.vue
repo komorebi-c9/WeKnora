@@ -45,9 +45,9 @@ const emojiChar = computed(() => {
   return v.slice(6).trim() || '';
 });
 
-// 预定义渐变色（与项目绿色主色协调，偏空间/协作感）
+// 预定义渐变色（首项与品牌青蓝主色协调，其余为装饰性配色）
 const gradients = [
-  { from: '#07c05f', to: '#059669' },  // 主绿
+  { from: '#5cbbd8', to: '#31788e' },  // 品牌青蓝（Orion 主色）
   { from: '#11998e', to: '#38ef7d' },  // 深绿渐变
   { from: '#43e97b', to: '#38f9d7' },  // 绿青
   { from: '#02aab0', to: '#00cdac' },  // 青绿

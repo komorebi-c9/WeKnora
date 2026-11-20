@@ -12,7 +12,10 @@
  *      → 可用 key：help（帮助与文档）、github（GitHub）、logout（退出登录）
  *
  *   ③ 左侧栏入口
- *      → 本文件的 HIDDEN_SIDEBAR_ITEMS
+ *      → 本文件的 HIDDEN_SIDEBAR_ITEMS / HIDDEN_SIDEBAR_MENU_PATHS
+ *
+ *   ④ 共享空间设置弹窗的分区菜单
+ *      → 本文件的 HIDDEN_ORG_SETTINGS_SECTIONS
  *
  * 往对应集合里加 key 即隐藏，删掉即恢复。
  */
@@ -60,4 +63,36 @@ export const HIDDEN_SIDEBAR_MENU_PATHS = new Set<string>([
   'toolbox',
   'creatChat',
   'automations',
+])
+
+/**
+ * 共享空间设置弹窗里可隐藏的分区（定义见
+ * ../views/organization/OrganizationSettingsModal.vue 的 navItems / navGroups）。
+ * 加进来即从弹窗左侧菜单移除，删掉即恢复；分区内容仍保留在模板里，
+ * 只是入口不渲染（弹窗每次打开都重置回 basic，不存在深链直入被藏分区）。
+ *
+ *   sharedAgents → 共享智能体
+ */
+export const HIDDEN_ORG_SETTINGS_SECTION_KEYS = ['sharedAgents'] as const
+
+export type HiddenOrgSettingsSectionKey = (typeof HIDDEN_ORG_SETTINGS_SECTION_KEYS)[number]
+
+export const HIDDEN_ORG_SETTINGS_SECTIONS = new Set<HiddenOrgSettingsSectionKey>([
+  'sharedAgents',
+])
+
+/**
+ * 空间「成员管理」页（../views/settings/TenantMembers.vue）可隐藏的操作按钮。
+ * 加进来即从页头移除，删掉即恢复；纯展示开关，不改后端鉴权。
+ *
+ *   invite     → 邀请成员（邮箱邀请）
+ *   share-link → 生成共享链接
+ */
+export const HIDDEN_TENANT_MEMBER_ACTION_KEYS = ['invite', 'share-link'] as const
+
+export type HiddenTenantMemberActionKey = (typeof HIDDEN_TENANT_MEMBER_ACTION_KEYS)[number]
+
+export const HIDDEN_TENANT_MEMBER_ACTIONS = new Set<HiddenTenantMemberActionKey>([
+  // 'invite',
+  // 'share-link',
 ])

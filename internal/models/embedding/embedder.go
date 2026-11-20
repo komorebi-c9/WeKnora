@@ -167,7 +167,7 @@ func newEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.Oll
 	case string(types.ModelSourceLocal):
 		return NewOllamaEmbedder(config.BaseURL,
 			config.ModelName, config.TruncatePromptTokens, config.Dimensions, config.ModelID, pooler, ollamaService)
-	case string(types.ModelSourceRemote):
+	case string(types.ModelSourceRemote), string(types.ModelSourceOrion):
 		return newRemoteEmbedder(config, pooler)
 	default:
 		return nil, fmt.Errorf("unsupported embedder source: %s", config.Source)

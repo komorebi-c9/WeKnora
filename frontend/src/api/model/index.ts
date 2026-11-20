@@ -91,6 +91,8 @@ export interface ModelConfig {
   is_default?: boolean;
   default_for?: string[];
   is_builtin?: boolean;
+  // 生命周期归属："orion" 表示由 Orion 同步托管，只读；空表示手工创建。
+  managed_by?: string;
   status?: string;
   // Per-field configured? metadata from the main response. For builtin
   // models it is returned only to system administrators.
@@ -155,6 +157,105 @@ export function listModels(type?: string): Promise<ModelConfig[]> {
         console.error('Failed to list models:', error);
         // 抛出而非吞掉：调用方（含缓存层）才能区分「真失败」与「成功但无模型」，
         // 避免把一次瞬时失败的空结果缓存下来。各 UI 调用点均已 try/catch 兜底。
+        reject(error);
+      });
+  });
+}
+
+// Orion 模型目录同步状态（模型页状态条）。
+export interface OrionModelStatus {
+  enabled: boolean;
+  key_configured: boolean;
+  last_sync_at?: string;
+  model_count: number;
+  last_error?: string;
+  sync_interval_seconds: number;
+}
+
+// 一次手动同步的结果。
+export interface OrionModelSyncResult {
+  total: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  skipped: number;
+  started_at: string;
+  finished_at?: string;
+}
+
+// 读取当前工作空间的 Orion 同步状态。
+export function getOrionModelStatus(): Promise<OrionModelStatus> {
+  return new Promise((resolve, reject) => {
+    get('/api/v1/models/orion/status')
+      .then((response: any) => {
+        if (response.success && response.data) {
+          resolve(response.data as OrionModelStatus);
+        } else {
+          reject(new Error(response.message || ''));
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to read Orion model status:', error);
+        reject(error);
+      });
+  });
+}
+
+// 立即从 Orion 同步模型（管理员）。
+export function syncOrionModels(): Promise<OrionModelSyncResult> {
+  return new Promise((resolve, reject) => {
+    post('/api/v1/models/orion/sync', {})
+      .then((response: any) => {
+        if (response.success && response.data) {
+          resolve(response.data as OrionModelSyncResult);
+        } else {
+          reject(new Error(response.message || ''));
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to sync Orion models:', error);
+        reject(error);
+      });
+  });
+}
+
+// 全局 Orion API Key 状态（仅平台管理员可读）。key_hint 只是掩码，原文永不返回。
+export interface OrionAPIKeyState {
+  configured: boolean;
+  key_hint?: string;
+}
+
+// 读取全局 Orion API Key 配置状态（系统管理员）。
+export function getOrionAPIKey(): Promise<OrionAPIKeyState> {
+  return new Promise((resolve, reject) => {
+    get('/api/v1/models/orion/api-key')
+      .then((response: any) => {
+        if (response.success && response.data) {
+          resolve(response.data as OrionAPIKeyState);
+        } else {
+          reject(new Error(response.message || ''));
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to read Orion api key state:', error);
+        reject(error);
+      });
+  });
+}
+
+// 保存全局 Orion API Key（系统管理员）。保存同步返回，模型同步由后端异步触发。
+export function saveOrionAPIKey(apiKey: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    put('/api/v1/models/orion/api-key', { api_key: apiKey })
+      .then((response: any) => {
+        if (response.success) {
+          resolve();
+        } else {
+          reject(new Error(response.message || ''));
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to save Orion api key:', error);
         reject(error);
       });
   });

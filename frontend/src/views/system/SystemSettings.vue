@@ -409,7 +409,7 @@ const SETTINGS_SECTION_KEYS: Record<Exclude<SettingsSection, 'other' | 'users'>,
   security: ['ssrf.whitelist', 'sandbox.docker_enabled'],
 }
 
-const activeSettingsSection = ref<SettingsSection>('access')
+const activeSettingsSection = ref<SettingsSection>('users')
 const knownSettingKeys = new Set(Object.values(SETTINGS_SECTION_KEYS).flat())
 const settingsByKey = computed<Map<string, SystemSettingItem>>(() => new Map(settings.value.map((item) => [item.key, item])))
 const unknownSettings = computed(() => settings.value.filter((item) => !knownSettingKeys.has(item.key)))
@@ -417,7 +417,6 @@ const hasUnknownSettings = computed(() => unknownSettings.value.length > 0)
 
 const sectionTabs = computed(() => {
   const tabs: { key: SettingsSection; icon: string; label: string }[] = [
-    { key: 'access', icon: 'lock-on', label: t('system.globalSettings.sections.access.title') },
     { key: 'users', icon: 'usergroup', label: t('system.globalSettings.userList.rowLabel') },
     { key: 'tenant', icon: 'folder', label: t('system.globalSettings.sections.tenant.title') },
     { key: 'runtime', icon: 'server', label: t('system.globalSettings.sections.runtime.title') },
@@ -427,7 +426,7 @@ const sectionTabs = computed(() => {
   return tabs
 })
 
-const PANEL_KEYS: readonly SettingsSection[] = ['access', 'users', 'tenant', 'runtime', 'security', 'other']
+const PANEL_KEYS: readonly SettingsSection[] = ['users', 'tenant', 'runtime', 'security', 'other']
 
 function panelFromQuery(): SettingsSection | null {
   const raw = Array.isArray(route.query.panel) ? route.query.panel[0] : route.query.panel
@@ -470,7 +469,7 @@ watch(() => route.query.panel, applyRoutePanel, { immediate: true })
 
 watch(hasUnknownSettings, (hasUnknown) => {
   if (!hasUnknown && activeSettingsSection.value === 'other') {
-    showPanel('access')
+    showPanel('users')
     return
   }
   applyRoutePanel()

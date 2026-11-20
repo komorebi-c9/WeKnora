@@ -1,6 +1,7 @@
 {
   "version": 1,
   "providers": {
+    "orion": [],
     "aliyun": [
       {
         "name": "Qwen3 family (hybrid thinking)",

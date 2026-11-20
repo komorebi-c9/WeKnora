@@ -124,8 +124,12 @@
             <code class="model-row__id">{{ WKC_MODEL_NAME_BY_KIND[kind] }}</code>
           </div>
           <div class="model-row__action">
+            <!-- Orion 托管模式下模型由 Orion 同步，本页不能再创建模型。 -->
+            <t-tag v-if="orionModelEnabled" theme="primary" variant="light" size="small">
+              {{ $t('modelSettings.orion.tag') }}
+            </t-tag>
             <t-tag
-              v-if="credentialState === 'configured' && existingKinds.has(kind)"
+              v-else-if="credentialState === 'configured' && existingKinds.has(kind)"
               theme="success"
               variant="light"
               size="small"
@@ -162,7 +166,7 @@
       </div>
 
       <div
-        v-if="credentialState === 'configured' && missingKinds.length > 1"
+        v-if="credentialState === 'configured' && missingKinds.length > 1 && !orionModelEnabled"
         class="models-section__batch"
       >
         <t-popconfirm
@@ -208,6 +212,7 @@ import { ref, computed, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { saveWeKnoraCloudCredentials, getWeKnoraCloudStatus, createModel, listModels } from '@/api/model'
+import { getAuthConfig } from '@/api/auth'
 import { useChatResourcesStore } from '@/stores/chatResources'
 import { testEmbeddingModel } from '@/api/initialization'
 import {
@@ -232,6 +237,8 @@ const formExpanded = ref(true)
 const existingKinds = ref<Set<WkcModelKind>>(new Set())
 const addingModels = ref(false)
 const addingKind = ref<WkcModelKind | null>(null)
+// Orion 接管模型目录后，本页的「添加模型」入口必须消失（服务端也会拒绝）。
+const orionModelEnabled = ref(false)
 
 const credentialState = computed(() => {
   if (needsReinit.value) return 'expired'
@@ -362,6 +369,12 @@ const checkStatus = async () => {
 }
 
 onMounted(async () => {
+  try {
+    const config = await getAuthConfig()
+    orionModelEnabled.value = !!config.orion_model_enabled
+  } catch {
+    orionModelEnabled.value = false
+  }
   await checkStatus()
 })
 </script>

@@ -45,6 +45,20 @@ func (s *stubCopyModelRepo) ClearDefaultByType(context.Context, uint, types.Mode
 	return nil
 }
 
+func (s *stubCopyModelRepo) ListByManagedBy(context.Context, string, uint64) ([]*types.Model, error) {
+	return nil, nil
+}
+
+func (s *stubCopyModelRepo) UpsertManaged(context.Context, *types.Model, string) error {
+	return nil
+}
+
+func (s *stubCopyModelRepo) ReconcileManaged(
+	context.Context, uint64, string, []*types.Model, bool,
+) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
+
 func TestCopyModel_CopiesCredentialsAndKeepsName(t *testing.T) {
 	source := &types.Model{
 		ID:          "src",

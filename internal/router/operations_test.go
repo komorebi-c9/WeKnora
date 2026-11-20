@@ -29,7 +29,7 @@ func registerOperationAreas(v1 *gin.RouterGroup, g *rbacGuards) {
 	RegisterFAQRoutes(v1, &handler.FAQHandler{}, g)
 	RegisterCustomAgentRoutes(v1, &handler.CustomAgentHandler{}, g)
 	RegisterSkillRoutes(v1, &handler.SkillHandler{}, g)
-	RegisterModelRoutes(v1, &handler.ModelHandler{}, &handler.ModelCredentialsHandler{}, g)
+	RegisterModelRoutes(v1, &handler.ModelHandler{}, &handler.ModelCredentialsHandler{}, nil, g)
 	RegisterMCPServiceRoutes(v1, &handler.MCPServiceHandler{}, &handler.MCPCredentialsHandler{},
 		&handler.MCPOAuthHandler{}, g)
 	RegisterSandboxConfigRoutes(v1, &handler.SandboxConfigHandler{}, &handler.SandboxSkillHandler{}, g)

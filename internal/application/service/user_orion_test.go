@@ -64,6 +64,18 @@ func (r *orionUserRepo) DeleteUser(_ context.Context, id string) error {
 	return nil
 }
 
+func (r *orionUserRepo) UpdateUser(_ context.Context, user *types.User) error {
+	if _, exists := r.byID[user.ID]; !exists {
+		return fmt.Errorf("user %s not found", user.ID)
+	}
+	delete(r.byName, r.byID[user.ID].Username)
+	delete(r.byEmail, r.byID[user.ID].Email)
+	r.byID[user.ID] = user
+	r.byName[user.Username] = user
+	r.byEmail[user.Email] = user
+	return nil
+}
+
 // orionTenantService mimics the tenants sequence: every created workspace gets
 // the next id starting at 10000, never the caller-supplied one.
 type orionTenantService struct {
@@ -186,8 +198,9 @@ func newOrionFixture(t *testing.T, handler http.HandlerFunc) *orionFixture {
 	return f
 }
 
-// orionIdentityHandler returns the shape Orion actually serves. orgId,
-// orgName and isAdmin are included on purpose: the mirror must ignore them.
+// orionIdentityHandler returns the shape Orion actually serves. orgId and
+// orgName are included on purpose: the mirror must ignore them. isAdmin is
+// consumed — an Orion admin is mirrored as a WeKnora system administrator.
 func orionIdentityHandler(id, orgID int64, username, email string, status int, isAdmin bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		emailJSON := "null"
@@ -241,8 +254,8 @@ func TestLoginWithOrionProvisionsPersonalWorkspace(t *testing.T) {
 	if user.Email != "orion-100000001@orion.invalid" {
 		t.Fatalf("email = %q, want the reserved placeholder", user.Email)
 	}
-	if user.IsSystemAdmin {
-		t.Fatal("mirrored accounts must never be system administrators")
+	if !user.IsSystemAdmin {
+		t.Fatal("an Orion org admin must be mirrored as a WeKnora system administrator")
 	}
 	if !strings.HasPrefix(user.PasswordHash, orionPasswordPrefix) {
 		t.Fatalf("password hash = %q, want the unusable placeholder", user.PasswordHash)
@@ -286,7 +299,7 @@ func TestLoginWithOrionIsIdempotent(t *testing.T) {
 }
 
 func TestLoginWithOrionReusesExistingAccount(t *testing.T) {
-	f := newOrionFixture(t, orionIdentityHandler(7, 3, "bob", "bob@example.com", 1, true))
+	f := newOrionFixture(t, orionIdentityHandler(7, 3, "bob", "bob@example.com", 1, false))
 
 	// Pre-existing account in someone else's workspace, with a role the mirror
 	// must not touch.
@@ -310,6 +323,36 @@ func TestLoginWithOrionReusesExistingAccount(t *testing.T) {
 	}
 	if len(f.members.members) != 1 || f.members.members[0].Role != types.TenantRoleContributor {
 		t.Fatalf("members = %+v, want the existing contributor row untouched", f.members.members)
+	}
+	if f.users.byID["7"].IsSystemAdmin {
+		t.Fatal("a plain Orion member must not be promoted to system admin")
+	}
+}
+
+// TestLoginWithOrionGrantsSystemAdminToExistingAccount proves a later login of
+// an Orion org admin upgrades the existing account, while their workspace and
+// membership role stay untouched.
+func TestLoginWithOrionGrantsSystemAdminToExistingAccount(t *testing.T) {
+	f := newOrionFixture(t, orionIdentityHandler(7, 3, "bob", "bob@example.com", 1, true))
+
+	f.tenants.tenants[42] = &types.Tenant{ID: 42, Name: "shared", Status: "active"}
+	f.users.byID["7"] = &types.User{ID: "7", Username: "bob", Email: "bob@example.com", TenantID: 42}
+	f.users.byName["bob"] = f.users.byID["7"]
+	f.users.byEmail["bob@example.com"] = f.users.byID["7"]
+
+	resp, err := f.svc.LoginWithOrion(context.Background(), "a")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+
+	if !resp.User.IsSystemAdmin {
+		t.Fatal("an Orion org admin must be granted WeKnora system admin")
+	}
+	if !f.users.byID["7"].IsSystemAdmin {
+		t.Fatal("the upgrade was not persisted")
+	}
+	if f.tenants.created != 0 {
+		t.Fatalf("workspaces created = %d, the account must keep its own", f.tenants.created)
 	}
 }
 

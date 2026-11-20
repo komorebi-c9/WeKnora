@@ -40,7 +40,9 @@
             <template #icon><t-icon name="history" /></template>
             {{ $t('tenantMember.audit.tabLabel') }}
           </t-button>
-          <t-popup v-if="canManage" v-model="invitePopupVisible" trigger="click" placement="bottom-end"
+          <!-- 交付裁剪：命中 HIDDEN_TENANT_MEMBER_ACTIONS 的按钮不渲染 -->
+          <t-popup v-if="canManage && !HIDDEN_TENANT_MEMBER_ACTIONS.has('invite')"
+            v-model="invitePopupVisible" trigger="click" placement="bottom-end"
             destroy-on-close overlay-class-name="wk-popover wk-popover--form member-invite-popup-overlay">
             <t-button theme="default" variant="text" size="small" class="members-list-add-btn"
               :title="$t('tenantMember.add.button')" :aria-label="$t('tenantMember.add.button')">
@@ -90,7 +92,8 @@
           <!-- Share-link generator. Sits next to the invite-by-email
                popup so the two flows live side-by-side: "I know who"
                (email input) vs "I don't" (one link, group chat). -->
-          <t-popup v-if="canManage" v-model="shareLinkPopupVisible" trigger="click" placement="bottom-end"
+          <t-popup v-if="canManage && !HIDDEN_TENANT_MEMBER_ACTIONS.has('share-link')"
+            v-model="shareLinkPopupVisible" trigger="click" placement="bottom-end"
             destroy-on-close overlay-class-name="wk-popover wk-popover--form member-invite-popup-overlay">
             <t-button theme="default" variant="text" size="small" class="members-list-add-btn"
               :title="$t('tenantInvitation.shareLink.button')"
@@ -505,6 +508,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
 import { copyWithToast } from '@/utils/clipboard'
 import { useAuthStore } from '@/stores/auth'
+import { HIDDEN_TENANT_MEMBER_ACTIONS } from '@/config/uiVisibility'
 import { AUDIT_ACTION_I18N_ROOTS } from '@/i18n/auditActionRegistry'
 import { auditActionLabel } from '@/i18n/auditActionLabel'
 import {

@@ -774,6 +774,7 @@ import { useAuthStore } from '@/stores/auth'
 import SpaceAvatar from '@/components/SpaceAvatar.vue'
 import agentIconSrc from '@/assets/img/agent.svg'
 import agentIconActiveSrc from '@/assets/img/agent-green.svg'
+import { HIDDEN_ORG_SETTINGS_SECTIONS } from '@/config/uiVisibility'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -951,14 +952,18 @@ const navItems = computed(() => {
       label: t('organization.share.sharedKnowledgeBase'),
       badge: sharedKnowledgeBases.value.length
     })
-    items.push({
-      key: 'sharedAgents',
-      badgeClass: 'nav-badge-count',
-      showZeroBadge: true,
-      icon: 'control-platform',
-      label: t('organization.settings.sharedAgents'),
-      badge: sharedAgents.value.length
-    })
+    // 交付裁剪：命中 HIDDEN_ORG_SETTINGS_SECTIONS 的分区不渲染菜单入口
+    //（内容区保留但永远不可达；弹窗打开即重置回 basic，无需兜底跳转）。
+    if (!HIDDEN_ORG_SETTINGS_SECTIONS.has('sharedAgents')) {
+      items.push({
+        key: 'sharedAgents',
+        badgeClass: 'nav-badge-count',
+        showZeroBadge: true,
+        icon: 'control-platform',
+        label: t('organization.settings.sharedAgents'),
+        badge: sharedAgents.value.length
+      })
+    }
   }
   return items
 })

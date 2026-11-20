@@ -824,7 +824,7 @@ onMounted(async () => {
   min-height: 100%;
   overflow: hidden;
   position: relative;
-  background: linear-gradient(225deg, #022c22 0%, #064e3b 15%, #065f46 25%, #047857 38%, #059669 50%, #07C05F 65%, #10B981 78%, #34D399 90%, #6EE7B7 100%);
+  background: linear-gradient(225deg, #1f3e49 0%, #295c6c 15%, #2e6e82 25%, #348199 38%, #3fa9c9 50%, #5cbbd8 65%, #3a95b1 78%, #31788e 90%, #aadaea 100%);
 
   &::before {
     content: '';
@@ -860,7 +860,7 @@ onMounted(async () => {
   border: 2px solid rgba(255, 255, 255, 0.3);
   box-shadow:
     0 0 15px rgba(255, 255, 255, 0.35),
-    0 0 30px rgba(16, 185, 129, 0.2),
+    0 0 30px rgba(74, 222, 230, 0.2),
     inset 0 0 8px rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;

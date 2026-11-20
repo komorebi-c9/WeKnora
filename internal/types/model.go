@@ -113,6 +113,10 @@ const (
 	ModelSourceNvidia      ModelSource = "nvidia"       // NVIDIA model
 	ModelSourceNovita      ModelSource = "novita"       // Novita AI model
 	ModelSourceAzureOpenAI ModelSource = "azure_openai" // Azure OpenAI model
+	// ModelSourceOrion marks rows synced from the LoLR Orion model gateway.
+	// They are read-only and owned by managed_by=orion; every inference call
+	// goes through the Orion gateway.
+	ModelSourceOrion ModelSource = "orion"
 )
 
 // EmbeddingParameters represents the embedding parameters for a model

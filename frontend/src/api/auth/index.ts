@@ -275,6 +275,8 @@ export interface AuthConfigResponse {
   orion_sso_enabled?: boolean
   /** false 表示本地登录页不可达（SSO-only）。 */
   login_fallback_enabled?: boolean
+  /** Orion 接管模型目录：模型页只读，所有模型来自 Orion。 */
+  orion_model_enabled?: boolean
 }
 
 export async function getAuthConfig(): Promise<AuthConfigResponse> {
@@ -290,6 +292,7 @@ export async function getAuthConfig(): Promise<AuthConfigResponse> {
       complex_password_enabled: false,
       orion_sso_enabled: false,
       login_fallback_enabled: true,
+      orion_model_enabled: false,
     }
   }
 }

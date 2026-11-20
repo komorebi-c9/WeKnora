@@ -124,7 +124,9 @@ func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, err
 	switch strings.ToLower(string(config.Source)) {
 	case string(types.ModelSourceLocal):
 		c, err = NewOllamaChat(config, ollamaService)
-	case string(types.ModelSourceRemote):
+	case string(types.ModelSourceRemote), string(types.ModelSourceOrion):
+		// Orion rows are OpenAI-compatible and routed the same way as any
+		// remote chat model; the gateway decides the upstream provider.
 		c, err = NewRemoteChat(config)
 	default:
 		return nil, fmt.Errorf("unsupported chat model source: %s", config.Source)

@@ -6,17 +6,20 @@ import { fileURLToPath } from 'node:url'
 
 const terminal = readFileSync(new URL('./SandboxTerminal.vue', import.meta.url), 'utf8')
 const theme = readFileSync(new URL('../../../assets/theme/theme.css', import.meta.url), 'utf8')
+const brandPalette = readFileSync(new URL('../../../constants/brandPalette.ts', import.meta.url), 'utf8')
 const promptUrl = new URL('../../../../../docker/sandbox-pty-prompt.sh', import.meta.url)
 const prompt = readFileSync(promptUrl, 'utf8')
 const promptPath = fileURLToPath(promptUrl)
 
-test('xterm palette keeps prompt green but ls directories blue', () => {
-  assert.match(theme, /--td-brand-color-4: #07c05f/)
-  assert.match(terminal, /brightGreen: '#07c05f'/)
+test('xterm palette keeps prompt brand-colored but ls directories blue', () => {
+  // 品牌色统一定义在 constants/brandPalette.ts（主色 #3fa9c9，对齐 Orion 青蓝），theme.css 只做派生引用。
+  assert.match(brandPalette, /'#3fa9c9'/)
+  assert.match(theme, /--td-brand-color: var\(--td-brand-color-4\)/)
+  assert.match(terminal, /brightGreen: '#3a95b1'/)
   assert.match(terminal, /brightBlue: '#729fcf'/)
-  assert.doesNotMatch(terminal, /brightBlue: '#07c05f'/)
+  assert.doesNotMatch(terminal, /brightBlue: '#3a95b1'/)
   assert.match(terminal, /brightCyan: '#34e2e2'/)
-  assert.doesNotMatch(terminal, /brightCyan: '#08dd6e'/)
+  assert.doesNotMatch(terminal, /brightCyan: '#bdf3f6'/)
   assert.match(prompt, /\\033\[01;32m/)
   assert.match(prompt, /\\033\[01;34m/)
   assert.doesNotMatch(prompt, /\\033\[01;31m/)
