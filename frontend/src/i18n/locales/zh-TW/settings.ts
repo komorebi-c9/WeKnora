@@ -379,9 +379,9 @@ export default {
   defaultSettings: {
     loadFailed: '預設設定載入失敗，請重試後再編輯。',
     title: '預設設定',
-    description: '集中管理本空間各項功能預設使用的模型和搜尋引擎。',
+    description: '集中管理本空間各項功能預設使用的模型。',
     introTitle: '資源未單獨指定時使用這裡的預設值',
-    introDescription: '智慧體、知識庫或單次對話明確選擇的模型優先；未選擇時使用這裡的空間預設；空間也未設定時，使用部署內建的預設模型。',
+    introDescription: '知識庫或單次對話明確選擇的模型優先；未選擇時使用這裡的空間預設；空間也未設定時，使用部署內建的預設模型。',
     readOnly: '僅空間管理員可以修改，你可以查看目前生效的預設值。',
     modelGroup: '模型',
     webSearchGroup: '網路搜尋',

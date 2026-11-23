@@ -189,6 +189,7 @@ export default {
       statusUnknown: '正在讀取同步狀態…',
       keyNotConfigured: '尚未設定全域 Orion API Key',
       keyMissing: '尚未設定全域 Orion API Key，請先設定後同步',
+      keyMissingMember: '尚未設定全域 Orion API Key，請聯繫管理員設定後同步',
       empty: 'Orion 尚未回傳可用模型，請稍後點擊「立即同步」重試',
       modelCount: '{count} 個模型',
       lastSync: '上次同步 {time}',
@@ -204,7 +205,12 @@ export default {
       apiKeyCurrent: '目前憑證：{hint}',
       apiKeyHint: '儲存後立即全域生效，所有工作空間共用此憑證；模型將於背景非同步重新同步。',
       apiKeySaved: 'Orion API Key 已儲存，正在背景重新同步模型',
-      apiKeySaveFailed: '儲存 Orion API Key 失敗，請稍後重試'
+      apiKeySaveFailed: '儲存 Orion API Key 失敗，請稍後重試',
+      apiKeyRevoke: '取消授權',
+      apiKeyRevokeConfirmTitle: '取消 Orion 授權',
+      apiKeyRevokeConfirm: '取消授權後，所有由該憑證同步的模型都會被清空，且需要重新設定才能恢復。確定繼續嗎？',
+      apiKeyRevoked: '已取消授權，並清理了 {count} 個同步模型',
+      apiKeyRevokeFailed: '取消授權失敗，請稍後重試'
     },
     confirmDelete: '確定刪除模型「{name}」嗎？',
     usage: {

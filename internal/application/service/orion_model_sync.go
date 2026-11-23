@@ -97,8 +97,8 @@ type OrionModelSync struct {
 }
 
 // OrionGatewayPath is the path prefix under which the Orion service exposes
-// everything: identity (/orion/api/auth/current), the console catalogue
-// (/orion/api/models) and inference (/orion/v1/...). ORION_BASE_URL carries
+// everything: identity (/orion/v1/iam/me), the model catalogue
+// (/orion/v1/models) and inference (/orion/v1/...). ORION_BASE_URL carries
 // only the origin, e.g. http://192.168.3.139:9298, so the model side appends
 // this prefix to rebuild the gateway root the old ORION_MODEL_BASE_URL used
 // to point at (e.g. http://192.168.3.139:9298/orion).
@@ -131,8 +131,8 @@ func NewOrionModelSync(
 
 // NewOrionModelSyncWithCatalog injects the catalog client (tests, or a future
 // transport). baseURL is the Orion gateway root, i.e. the shared origin plus
-// OrionGatewayPath — catalogue lives under {baseURL}/api/models and inference
-// under {baseURL}/v1.
+// OrionGatewayPath — the catalogue and inference both live under
+// {baseURL}/v1 (GET /models, POST /embeddings, ...).
 func NewOrionModelSyncWithCatalog(
 	cfg *config.OrionModelConfig,
 	baseURL string,
@@ -213,6 +213,91 @@ func (s *OrionModelSync) SyncTenantBackground(tenantID uint64) {
 	}()
 }
 
+// orionPurgeWaitTimeout bounds how long a revoke waits for an in-flight
+// workspace sync to release its guard. A sync that started before the credential
+// was cleared may still write rows; waiting it out is what makes the purge final
+// instead of racing it.
+const orionPurgeWaitTimeout = 10 * time.Second
+
+// PurgeAll removes every Orion-managed model row in every workspace and reports
+// how many rows were removed.
+//
+// The caller must clear the global credential first: with no key, the periodic
+// sweep and the background refreshes become no-ops, so a purge cannot be undone
+// by a sync that starts afterwards. This method only has to wait out a sync that
+// was already in flight.
+//
+// Rows are soft-deleted through ReconcileManaged with an empty desired set —
+// the same primitive a credential rotation uses — so a later re-authorisation
+// revives them with their original ids and workspace bindings.
+func (s *OrionModelSync) PurgeAll(ctx context.Context) (int, error) {
+	if s == nil || s.modelRepo == nil || s.tenantRepo == nil {
+		return 0, nil
+	}
+	tenants, err := s.tenantRepo.ListTenants(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list workspaces: %w", err)
+	}
+
+	deleted := 0
+	var firstErr error
+	for _, tenant := range tenants {
+		if tenant == nil || tenant.ID == 0 {
+			continue
+		}
+		if !s.acquire(ctx, tenant.ID, orionPurgeWaitTimeout) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%w: workspace %d", ErrOrionSyncInProgress, tenant.ID)
+			}
+			logger.Warnf(ctx,
+				"[orion-model] workspace %d is still syncing; its orion models were left in place",
+				tenant.ID)
+			continue
+		}
+		_, _, removed, purgeErr := s.modelRepo.ReconcileManaged(
+			ctx, tenant.ID, OrionManagedBy, nil, true)
+		s.end(tenant.ID)
+		if purgeErr != nil {
+			if firstErr == nil {
+				firstErr = purgeErr
+			}
+			logger.Warnf(ctx, "[orion-model] purging workspace %d failed: %v", tenant.ID, purgeErr)
+			continue
+		}
+		deleted += removed
+		s.clearState(tenant.ID)
+	}
+	logger.Infof(ctx, "[orion-model] purged %d orion-managed model rows", deleted)
+	return deleted, firstErr
+}
+
+// acquire takes the per-workspace sync guard, waiting up to timeout for an
+// in-flight sync to release it.
+func (s *OrionModelSync) acquire(ctx context.Context, tenantID uint64, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if s.begin(tenantID) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// clearState forgets the workspace's last sync so the status bar stops
+// advertising a reconciliation that no longer has any models behind it.
+func (s *OrionModelSync) clearState(tenantID uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.states, tenantID)
+}
+
 // SyncAll reconciles every workspace against the shared global credential.
 // The catalogue is pulled once (all tenants see the same models) and each
 // workspace is then reconciled in its own transaction. One workspace failing
@@ -253,6 +338,16 @@ func (s *OrionModelSync) SyncAll(ctx context.Context) {
 	for _, tenant := range tenants {
 		if tenant == nil || tenant.ID == 0 {
 			continue
+		}
+		// The credential can be revoked while a sweep is still walking the
+		// workspaces. Stop at the next boundary instead of repopulating rows the
+		// revoke just purged.
+		if s.credentialStore != nil {
+			if configured, err := s.credentialStore.Configured(ctx); err == nil && !configured {
+				logger.Infof(ctx,
+					"[orion-model] global orion api key was cleared; aborting the sweep")
+				return
+			}
 		}
 		if _, err := s.syncTenant(ctx, tenant.ID, apiKey, entries, probeCache); err != nil {
 			s.recordFailure(tenant.ID, err)

@@ -1,0 +1,306 @@
+# ============================================================================
+# WeKnora 单镜像（方案 A）：frontend(nginx) + app(Go) + docreader(Python)
+#
+# 三个进程由 supervisord 在同一容器内拉起，进程间通过回环地址通信：
+#   nginx :80  ->  127.0.0.1:8080 (app)  ->  127.0.0.1:50051 (docreader)
+#
+# 最终底座必须是 python:3.10.18-bookworm：
+#   docreader 的 venv 在 python:3.10.18 下构建（pyproject requires-python >= 3.10.18），
+#   换底座会破坏 venv 的解释器路径。
+#
+# 构建示例（本地验证）：
+#   docker build -f docker/Dockerfile.allinone \
+#     --build-arg WITH_ANYDOC=1 \
+#     -t lolr-kb-allinone:dev .
+#
+# 多架构（推送华为云 SWR）：
+#   PLATFORMS=linux/amd64,linux/arm64 PUSH=1 ./scripts/build_allinone.sh
+# ============================================================================
+
+# syntax=docker/dockerfile:1.7
+
+# ---------------------------------------------------------------------------
+# 1) 前端静态资源
+# ---------------------------------------------------------------------------
+FROM node:24-bookworm-slim AS web
+
+WORKDIR /frontend
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG NODE_MAX_OLD_SPACE_SIZE=4096
+
+ENV VITE_IS_DOCKER=true
+ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
+
+# xlsx 是本地 file: 依赖，npm ci 解析它时需要 vendor/ 先就位
+COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/vendor ./vendor
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+        npm ci --registry="$NPM_REGISTRY"; \
+    else \
+        npm ci; \
+    fi
+
+COPY frontend .
+
+# 构建期注入版本；VITE_BASE_PATH 必须与 Orion 网关的 expose.route 一致
+ARG VITE_FRONTEND_COMMIT=unknown
+ARG VITE_BASE_PATH=/lolr-kb/
+ENV VITE_FRONTEND_COMMIT=${VITE_FRONTEND_COMMIT}
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# 2) Go 后端（含可选 anydoc 进程内解析引擎；不含 BrowserSkill）
+# ---------------------------------------------------------------------------
+FROM golang:1.26-bookworm AS appbuild
+
+WORKDIR /app
+
+ARG GOPRIVATE_ARG
+ARG GOPROXY_ARG=https://goproxy.cn,direct
+ARG GOSUMDB_ARG=off
+ARG APK_MIRROR_ARG=mirrors.aliyun.com
+
+ENV GOPRIVATE=${GOPRIVATE_ARG}
+ENV GOPROXY=${GOPROXY_ARG}
+ENV GOSUMDB=${GOSUMDB_ARG}
+
+RUN if [ -n "$APK_MIRROR_ARG" ]; then \
+        sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
+    apt-get update && \
+    apt-get install -y git build-essential libsqlite3-dev curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# go.mod 里 anydoc 有 replace 到 ./third_party/anydoc-go，必须先有它的 go.mod
+COPY go.mod go.sum ./
+COPY third_party/anydoc-go/go.mod third_party/anydoc-go/go.mod
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY cmd/download cmd/download
+RUN go run cmd/download/duckdb/duckdb.go
+
+COPY . .
+
+ARG WITH_ANYDOC=1
+ARG RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static
+ARG RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup
+ARG RUSTUP_INSTALLER_URL=https://sh.rustup.rs
+ARG CARGO_REGISTRY_MIRROR=sparse+https://rsproxy.cn/index/
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:$PATH
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    if [ "$WITH_ANYDOC" = "1" ]; then \
+        if [ -n "$CARGO_REGISTRY_MIRROR" ]; then \
+            mkdir -p "$CARGO_HOME" && \
+            printf '%s\n' \
+              '[source.crates-io]' \
+              'replace-with = "mirror"' \
+              '[source.mirror]' \
+              "registry = \"${CARGO_REGISTRY_MIRROR}\"" \
+              > "$CARGO_HOME/config.toml"; \
+        fi && \
+        curl --proto '=https' --tlsv1.2 -sSf "${RUSTUP_INSTALLER_URL}" \
+            | sh -s -- -y --profile minimal --default-toolchain stable && \
+        ./scripts/build-anydoc-lib.sh; \
+    fi
+
+ARG VERSION_ARG=unknown
+ARG COMMIT_ID_ARG=unknown
+ARG BUILD_TIME_ARG=unknown
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    export GO_VERSION="$(go version)"; \
+    export VERSION="${VERSION_ARG}"; \
+    export COMMIT_ID="${COMMIT_ID_ARG}"; \
+    export BUILD_TIME="${BUILD_TIME_ARG}"; \
+    if [ "$WITH_ANYDOC" = "1" ]; then \
+        make build-prod GO_BUILD_TAGS=anydoc; \
+    else \
+        make build-prod; \
+    fi
+
+# 运行时 gojieba 需要模块目录里的词典；许可证随镜像分发
+RUN --mount=type=cache,target=/go/pkg/mod \
+    cp -r /go/pkg/mod/github.com/yanyiwu/ /app/yanyiwu/ && \
+    bash ./scripts/copy-licenses.sh /license-bundle
+
+# ---------------------------------------------------------------------------
+# 3) docreader Python 依赖
+# ---------------------------------------------------------------------------
+FROM python:3.10.18-bookworm AS drbuild
+
+WORKDIR /app
+
+ARG APT_MIRROR=mirrors.aliyun.com
+ARG PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+
+# 兼容 "mirrors.aliyun.com" 与 "http(s)://mirrors.aliyun.com" 两种写法：
+# deb822 的 URIs 里带协议，这里只替换 host 部分。
+RUN APT_HOST="${APT_MIRROR#http://}"; \
+    APT_HOST="${APT_HOST#https://}"; \
+    APT_HOST="${APT_HOST%/}"; \
+    if [ -n "$APT_HOST" ]; then \
+        for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+            [ -f "$f" ] && sed -i -e "s@deb.debian.org@${APT_HOST}@g" -e "s@security.debian.org@${APT_HOST}@g" "$f"; \
+        done; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        gcc python3-dev libjpeg-dev zlib1g-dev libffi-dev \
+        libgl1 libglib2.0-0 antiword curl unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY docreader/pyproject.toml docreader/uv.lock ./
+# 不能直接设 UV_DEFAULT_INDEX 后 `uv sync --locked`：uv.lock 的 source 固定为 pypi.org，
+# 换索引会让 uv 判定锁文件过期、--locked 直接失败。
+# 这里改为：从锁文件导出精确版本清单（uv export --frozen），再用 pip + 国内镜像安装。
+# 好处是完全复用 uv.lock 的版本/哈希，同时所有下载都走国内 PyPI 镜像。
+RUN python -m venv /app/.venv && \
+    /app/.venv/bin/pip install --no-cache-dir --upgrade pip -i "${PIP_INDEX_URL}" && \
+    pip install --no-cache-dir uv -i "${PIP_INDEX_URL}"
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m uv export --frozen --no-dev --no-emit-project \
+        --format requirements-txt -o /tmp/requirements.txt && \
+    /app/.venv/bin/pip install -i "${PIP_INDEX_URL}" --no-deps -r /tmp/requirements.txt
+
+COPY docreader docreader
+
+# 用 venv 内的 grpc_tools 生成 proto，保证生成代码与运行时 grpcio 版本一致
+ENV PATH="/app/.venv/bin:${PATH}"
+RUN python -m grpc_tools.protoc -Idocreader/proto \
+        --python_out=docreader/proto \
+        --pyi_out=docreader/proto \
+        --grpc_python_out=docreader/proto \
+        docreader/proto/docreader.proto && \
+    sed -i 's/^import docreader_pb2/from docreader.proto import docreader_pb2/' \
+        docreader/proto/docreader_pb2_grpc.py
+
+# ---------------------------------------------------------------------------
+# 4) 最终运行镜像
+# ---------------------------------------------------------------------------
+FROM python:3.10.18-bookworm
+
+ARG APT_MIRROR=mirrors.aliyun.com
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+ARG GITHUB_PROXY=https://gh-proxy.com/
+ARG TARGETARCH
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=Asia/Shanghai \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+    WEKNORA_BASE_PATH=/lolr-kb \
+    VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:${PATH}"
+
+# 默认阿里 Debian 源；传空字符串回退官方源。
+# 兼容 "mirrors.aliyun.com" 与 "http(s)://mirrors.aliyun.com" 两种写法：
+# deb822 的 URIs 里带协议，这里只替换 host 部分。
+RUN APT_HOST="${APT_MIRROR#http://}"; \
+    APT_HOST="${APT_HOST#https://}"; \
+    APT_HOST="${APT_HOST%/}"; \
+    if [ -n "$APT_HOST" ]; then \
+        for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+            [ -f "$f" ] && sed -i -e "s@deb.debian.org@${APT_HOST}@g" -e "s@security.debian.org@${APT_HOST}@g" "$f"; \
+        done; \
+    fi && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates bash sed vim wget gnupg tar dpkg tzdata curl \
+        nginx gettext-base gosu \
+        build-essential libsqlite3-0 \
+        postgresql-client default-mysql-client \
+        libffi-dev libssl-dev nodejs npm \
+        ffmpeg qpdf antiword \
+        libjpeg62-turbo libgl1 libglib2.0-0 libxinerama1 libfontconfig1 \
+        libdbus-glib-1-2 libcairo2 libcups2 libglu1-mesa libsm6 \
+        openjdk-17-jre-headless libreoffice && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+
+# supervisor 单独 venv：避免 apt 版把 python3.11 带进镜像，与底座 3.10 形成双解释器
+RUN python -m venv /opt/supervisor && \
+    /opt/supervisor/bin/pip install --no-cache-dir supervisor==4.2.5
+
+# uv/uvx 供 Skills 工具链使用
+RUN mkdir -p /home/appuser/.local/bin && \
+    curl -LsSf https://astral.sh/uv/install.sh \
+        | CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh && \
+    ln -sf /home/appuser/.local/bin/uvx /usr/local/bin/uvx && \
+    chmod +x /usr/local/bin/uvx
+
+# grpc 健康探针（多架构）
+RUN case "${TARGETARCH:-$(uname -m)}" in \
+        amd64|x86_64) ARCH=amd64 ;; \
+        arm64|aarch64) ARCH=arm64 ;; \
+        *) echo "unsupported arch: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
+    esac && \
+    wget -qO /bin/grpc_health_probe \
+        "${GITHUB_PROXY}https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.24/grpc_health_probe-linux-${ARCH}" && \
+    chmod +x /bin/grpc_health_probe
+
+# ---------------- app 运行时文件 ----------------
+COPY --from=appbuild /app/WeKnora /app/WeKnora
+COPY --from=appbuild /app/config /app/config
+COPY --from=appbuild /app/scripts /app/scripts
+COPY --from=appbuild /app/migrations /app/migrations
+COPY --from=appbuild /app/dataset/samples /app/dataset/samples
+COPY --from=appbuild /app/yanyiwu/ /go/pkg/mod/github.com/yanyiwu/
+COPY --from=appbuild /go/bin/migrate /usr/local/bin/
+COPY --from=appbuild /root/.duckdb /home/appuser/.duckdb
+COPY --from=appbuild /license-bundle/ /app/
+
+# ---------------- docreader 运行时 ----------------
+COPY --from=drbuild /app/.venv /app/.venv
+COPY --from=drbuild /app/docreader /app/docreader
+
+# Playwright WebKit（网页解析）——装到 /opt/pw-browsers，非 root 也可读
+RUN if [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then \
+        PLAYWRIGHT_DOWNLOAD_HOST="$PLAYWRIGHT_DOWNLOAD_HOST" /app/.venv/bin/python -m playwright install webkit; \
+    else \
+        /app/.venv/bin/python -m playwright install webkit; \
+    fi && \
+    /app/.venv/bin/python -m playwright install-deps webkit && \
+    chmod -R a+rX /opt/pw-browsers
+
+# ---------------- 前端与 nginx ----------------
+COPY --from=web /frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
+COPY frontend/nginx-api-proxy.conf /etc/nginx/api-proxy.conf
+COPY frontend/nginx-http.conf /etc/nginx/conf.d/00-weknora-http.conf
+COPY docker/nginx-health.inc.template /etc/nginx/templates/health.inc.template
+COPY docker/nginx-prefix.inc.template /etc/nginx/templates/prefix.inc.template
+
+# ---------------- 进程管理 ----------------
+COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
+COPY docker/allinone-entrypoint.sh /usr/local/bin/allinone-entrypoint.sh
+COPY docker/allinone-healthcheck.sh /usr/local/bin/allinone-healthcheck.sh
+
+RUN chmod +x /usr/local/bin/allinone-entrypoint.sh /usr/local/bin/allinone-healthcheck.sh && \
+    ln -sf /dev/stdout /var/log/nginx/access.log && \
+    ln -sf /dev/stderr /var/log/nginx/error.log
+
+# 非 root 运行 app；docreader/nginx 由 supervisor 以 root 启动
+# /docker-entrypoint-initdb.d：入口脚本在启动时增量执行其中的 *.sh / *.sql
+# （已执行过的记录在目标库的 public._weknora_initdb_history 台账表里，新增脚本
+# 会在下次启动时自动补跑），可从宿主机 bind-mount 或派生镜像 COPY 进去。
+RUN useradd -m -s /bin/bash appuser && \
+    mkdir -p /data/files /tmp/docreader /docker-entrypoint-initdb.d && \
+    chown -R appuser:appuser /app /data/files /home/appuser && \
+    chmod +x /app/scripts/*.sh
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
+    CMD ["/usr/local/bin/allinone-healthcheck.sh"]
+
+ENTRYPOINT ["/usr/local/bin/allinone-entrypoint.sh"]

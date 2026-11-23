@@ -9,7 +9,7 @@ services:
       context: ./frontend
       args:
         VITE_FRONTEND_COMMIT: ${VITE_FRONTEND_COMMIT:-unknown}
-        NPM_REGISTRY: ${NPM_REGISTRY:-}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-4096}
     container_name: WeKnora-frontend
     ports:
@@ -41,8 +41,13 @@ services:
       context: .
       dockerfile: docker/Dockerfile.app
       args:
-        - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
+        # 构建依赖源默认走国内镜像（阿里 Debian / goproxy.cn / 淘宝 npm /
+        # GitHub 加速）。显式赋空字符串即可回退到官方源。
+        - APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}
+        - GOPROXY_ARG=${GOPROXY_ARG:-https://goproxy.cn,direct}
         - WITH_ANYDOC=${WITH_ANYDOC:-1}
+        - BROWSERSKILL_REPO=${BROWSERSKILL_REPO:-https://gh-proxy.com/https://github.com/Tencent/BrowserSkill.git}
+        - NPM_REGISTRY=${NPM_REGISTRY:-https://registry.npmmirror.com}
         # Build metadata shown on the system-info page. start_all.sh injects
         # these from git and the VERSION file; with a plain `docker compose
         # build` leave them unset (version falls back to the VERSION file,
@@ -445,8 +450,12 @@ services:
       context: .
       dockerfile: docker/Dockerfile.docreader
       args:
-        - APT_MIRROR=${APT_MIRROR:-}
-        - PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-}
+        # 默认国内源：阿里 Debian / 阿里 PyPI / npmmirror Playwright /
+        # GitHub 加速；显式赋空字符串可回退官方源。
+        - APT_MIRROR=${APT_MIRROR:-http://mirrors.aliyun.com}
+        - PIP_INDEX_URL=${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        - GITHUB_PROXY=${GITHUB_PROXY:-https://gh-proxy.com/}
+        - PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-https://npmmirror.com/mirrors/playwright}
         - PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST=${PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST:-}
         - VERSION_ARG=${DOCREADER_VERSION:-unknown}
         - COMMIT_ID_ARG=${DOCREADER_COMMIT_ID:-unknown}

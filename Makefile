@@ -1,8 +1,8 @@
-.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs docs-check install-swagger build-lite run-lite package-lite anydoc-lib build-anydoc
+.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-allinone docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs docs-check install-swagger build-lite run-lite package-lite anydoc-lib build-anydoc
 
 # Show help
 help:
-	@echo "WeKnora Makefile 帮助"
+	@echo "LolrKB Makefile 帮助"
 	@echo ""
 	@echo "基础命令:"
 	@echo "  build             构建应用"
@@ -13,9 +13,9 @@ help:
 	@echo "  clean             清理构建文件"
 	@echo ""
 	@echo "Docker 命令:"
-	@echo "  docker-build-app       构建应用 Docker 镜像 (wechatopenai/weknora-app)"
-	@echo "  docker-build-docreader 构建文档读取器镜像 (wechatopenai/weknora-docreader)"
-	@echo "  docker-build-frontend  构建前端镜像 (wechatopenai/weknora-ui)"
+	@echo "  docker-build-app       构建应用 Docker 镜像 (lolr/lolr-kb-app)"
+	@echo "  docker-build-docreader 构建文档读取器镜像 (lolr/lolr-kb-docreader)"
+	@echo "  docker-build-frontend  构建前端镜像 (lolr/lolr-kb-ui)"
 	@echo "  docker-build-all       构建所有 Docker 镜像"
 	@echo "  docker-run            运行 Docker 容器"
 	@echo "  docker-stop           停止 Docker 容器"
@@ -78,7 +78,8 @@ BINARY_NAME=WeKnora
 MAIN_PATH=./cmd/server
 
 # Docker related variables
-DOCKER_IMAGE=wechatopenai/weknora-app
+DOCKER_IMAGE_PREFIX=lolr
+DOCKER_IMAGE=$(DOCKER_IMAGE_PREFIX)/lolr-kb-app
 DOCKER_TAG=latest
 
 # Platform detection
@@ -141,6 +142,11 @@ docker-build-app:
 	@eval $$(./scripts/get_version.sh env); \
 	./scripts/get_version.sh info; \
 	docker build --platform $(PLATFORM) \
+		$(if $(BROWSERSKILL_REPO),--build-arg BROWSERSKILL_REPO="$(BROWSERSKILL_REPO)",) \
+		$(if $(NPM_REGISTRY),--build-arg NPM_REGISTRY="$(NPM_REGISTRY)",) \
+		$(if $(GOPROXY_ARG),--build-arg GOPROXY_ARG="$(GOPROXY_ARG)",) \
+		$(if $(APK_MIRROR_ARG),--build-arg APK_MIRROR_ARG="$(APK_MIRROR_ARG)",) \
+		$(if $(PIP_INDEX_URL),--build-arg PIP_INDEX_URL="$(PIP_INDEX_URL)",) \
 		--build-arg VERSION_ARG="$$VERSION" \
 		--build-arg COMMIT_ID_ARG="$$COMMIT_ID" \
 		--build-arg BUILD_TIME_ARG="$$BUILD_TIME" \
@@ -151,16 +157,28 @@ docker-build-app:
 docker-build-docreader:
 	@eval $$(./scripts/get_version.sh env); \
 	docker build --platform $(PLATFORM) \
+		$(if $(APT_MIRROR),--build-arg APT_MIRROR="$(APT_MIRROR)",) \
+		$(if $(PIP_INDEX_URL),--build-arg PIP_INDEX_URL="$(PIP_INDEX_URL)",) \
+		$(if $(GITHUB_PROXY),--build-arg GITHUB_PROXY="$(GITHUB_PROXY)",) \
+		$(if $(PLAYWRIGHT_DOWNLOAD_HOST),--build-arg PLAYWRIGHT_DOWNLOAD_HOST="$(PLAYWRIGHT_DOWNLOAD_HOST)",) \
+		$(if $(PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST),--build-arg PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST="$(PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST)",) \
 		--build-arg VERSION_ARG="$$VERSION" \
 		--build-arg COMMIT_ID_ARG="$$COMMIT_ID" \
-		-f docker/Dockerfile.docreader -t wechatopenai/weknora-docreader:latest .
+		-f docker/Dockerfile.docreader -t $(DOCKER_IMAGE_PREFIX)/lolr-kb-docreader:latest .
 
 # Build frontend Docker image (multi-stage: npm runs inside the builder stage)
 docker-build-frontend:
 	@eval $$(./scripts/get_version.sh env); \
 	docker build --platform $(PLATFORM) \
+		$(if $(NPM_REGISTRY),--build-arg NPM_REGISTRY="$(NPM_REGISTRY)",) \
+		$(if $(NODE_MAX_OLD_SPACE_SIZE),--build-arg NODE_MAX_OLD_SPACE_SIZE="$(NODE_MAX_OLD_SPACE_SIZE)",) \
 		--build-arg VITE_FRONTEND_COMMIT="$$COMMIT_ID" \
-		-f frontend/Dockerfile -t wechatopenai/weknora-ui:latest frontend/
+		-f frontend/Dockerfile -t $(DOCKER_IMAGE_PREFIX)/lolr-kb-ui:latest frontend/
+
+# Build the all-in-one image (frontend + app + docreader in one container)
+# 额外变量：PLATFORMS / PUSH=1 / WITH_ANYDOC=0 / VITE_BASE_PATH
+docker-build-allinone:
+	./scripts/build_allinone.sh
 
 # Build all Docker images
 docker-build-all: docker-build-app docker-build-docreader docker-build-frontend

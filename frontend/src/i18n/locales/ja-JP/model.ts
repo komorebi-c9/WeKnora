@@ -352,6 +352,7 @@ export default {
       statusUnknown: '同期状態を取得中…',
       keyNotConfigured: 'グローバルな Orion API Key が未設定です',
       keyMissing: 'グローバルな Orion API Key が未設定です。先に設定してから同期してください。',
+      keyMissingMember: 'グローバルな Orion API Key が未設定です。管理者に設定を依頼してから同期してください。',
       empty: 'Orion から利用可能なモデルがまだ返されていません。「今すぐ同期」で再試行してください。',
       modelCount: '{count} 件のモデル',
       lastSync: '最終同期 {time}',
@@ -367,7 +368,12 @@ export default {
       apiKeyCurrent: '現在の認証情報：{hint}',
       apiKeyHint: '保存すると直ちに全体に適用され、すべてのワークスペースで共有されます。モデルはバックグラウンドで再同期されます。',
       apiKeySaved: 'Orion API Key を保存しました。バックグラウンドでモデルを再同期しています。',
-      apiKeySaveFailed: 'Orion API Key の保存に失敗しました。しばらくしてから再試行してください。'
+      apiKeySaveFailed: 'Orion API Key の保存に失敗しました。しばらくしてから再試行してください。',
+      apiKeyRevoke: '認可を取り消す',
+      apiKeyRevokeConfirmTitle: 'Orion の認可を取り消す',
+      apiKeyRevokeConfirm: '認可を取り消すと、この認証情報で同期したモデルはすべて削除され、再設定するまで復元されません。続行しますか？',
+      apiKeyRevoked: '認可を取り消し、同期モデルを {count} 件削除しました',
+      apiKeyRevokeFailed: '認可の取り消しに失敗しました。しばらくしてから再試行してください。'
     },
     typeShort: {
       chat: 'チャット',

@@ -11,6 +11,8 @@
  * 这里把该决策收敛成单一真相源，渲染组件只需声明作用域，不再各自拼 URL。
  */
 
+import { getApiBaseUrl } from './api-base.ts';
+
 export const PROVIDER_SCHEME_PATTERN = 'resource|local|minio|cos|tos|s3|oss|ks3|obs';
 
 const PROVIDER_FILE_SCHEME_RE = new RegExp(`^(${PROVIDER_SCHEME_PATTERN}):\\/\\/\\S+$`, 'i');
@@ -22,6 +24,25 @@ const STORAGE_BACKEND_FILE_SCHEME_RE = new RegExp(
 const KB_FILE_PROXY_PATH_RE = /^\/api\/v1\/knowledge-bases\/[^/]+\/files$/;
 const EMBED_FILE_PROXY_PATH_RE = /^\/api\/v1\/embed\/[^/]+\/files$/;
 const MESSAGE_FILE_PROXY_PATH_RE = /^\/api\/v1\/sessions\/[^/]+\/messages\/[^/]+\/files$/;
+
+/**
+ * 子路径部署（VITE_BASE_PATH=/lolr-kb/）下，代理请求必须带上同一前缀，
+ * 否则浏览器会请求站点根路径的 /files、/api/v1/...（网关没有这些路由）。
+ * 根路径部署时 getApiBaseUrl() 返回空串，行为与改造前完全一致。
+ */
+function withApiBase(path: string): string {
+  const base = getApiBaseUrl();
+  return base ? `${base}${path}` : path;
+}
+
+/** 反向操作：把带前缀的 pathname 还原成路由匹配用的根路径。 */
+function withoutApiBase(pathname: string): string {
+  const base = getApiBaseUrl();
+  if (!base) return pathname;
+  if (pathname === base) return '/';
+  if (pathname.startsWith(`${base}/`)) return pathname.slice(base.length);
+  return pathname;
+}
 
 export type ProtectedFileAccessContext =
   /** 登录态用户：Bearer + 选中租户。 */
@@ -98,11 +119,12 @@ export function isProviderFileURL(url: string): boolean {
 
 /** 是否为受保护文件代理之一的路径。 */
 export function isProtectedFileProxyPath(pathname: string): boolean {
+  const path = withoutApiBase(pathname);
   return (
-    pathname === '/files'
-    || KB_FILE_PROXY_PATH_RE.test(pathname)
-    || MESSAGE_FILE_PROXY_PATH_RE.test(pathname)
-    || EMBED_FILE_PROXY_PATH_RE.test(pathname)
+    path === '/files'
+    || KB_FILE_PROXY_PATH_RE.test(path)
+    || MESSAGE_FILE_PROXY_PATH_RE.test(path)
+    || EMBED_FILE_PROXY_PATH_RE.test(path)
   );
 }
 
@@ -150,24 +172,28 @@ export function buildProtectedFileRequest(
     // 不如跳过等待 bootstrap 完成后的下一次水合。
     if (!channelId || !token) return null;
     return {
-      url: `/api/v1/embed/${encodeURIComponent(channelId)}/files?${query}`,
+      url: withApiBase(`/api/v1/embed/${encodeURIComponent(channelId)}/files?${query}`),
       headers: { Authorization: `Embed ${token}` },
     };
   }
 
   if (access.mode === 'knowledgeBase') {
     return {
-      url: `/api/v1/knowledge-bases/${encodeURIComponent(access.kbId.trim())}/files?${query}`,
+      url: withApiBase(
+        `/api/v1/knowledge-bases/${encodeURIComponent(access.kbId.trim())}/files?${query}`,
+      ),
       headers: tenantRequestHeaders(),
     };
   }
 
   if (access.mode === 'message') {
     return {
-      url: `/api/v1/sessions/${encodeURIComponent(access.sessionId.trim())}/messages/${encodeURIComponent(access.messageId.trim())}/files?${query}`,
+      url: withApiBase(
+        `/api/v1/sessions/${encodeURIComponent(access.sessionId.trim())}/messages/${encodeURIComponent(access.messageId.trim())}/files?${query}`,
+      ),
       headers: tenantRequestHeaders(),
     };
   }
 
-  return { url: `/files?${query}`, headers: tenantRequestHeaders() };
+  return { url: withApiBase(`/files?${query}`), headers: tenantRequestHeaders() };
 }

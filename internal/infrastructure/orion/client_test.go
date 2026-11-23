@@ -105,6 +105,40 @@ func TestMeIgnoresOrganisation(t *testing.T) {
 	}
 }
 
+// TestMeParsesIAMMePayload pins the response shape of the production
+// endpoint (/orion/v1/iam/me): extra IAM fields must be ignored and the
+// absent status must stay nil rather than reject the login.
+func TestMeParsesIAMMePayload(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/orion/v1/iam/me" {
+			t.Errorf("path = %q, want /orion/v1/iam/me", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"code":200,"message":"成功","data":{"id":100000001,
+			"orgId":1,"orgName":"默认机构","name":"管理员","username":"admin",
+			"mobile":null,"avatar":null,"myInviteCode":null,"email":null,
+			"hasPassword":true,"isAdmin":true,"roles":[],"permissions":[]}}`))
+	})
+
+	id, err := client.Me(context.Background(), "a")
+	if err != nil {
+		t.Fatalf("Me() error = %v", err)
+	}
+	if id.ID != 100000001 || id.Username != "admin" {
+		t.Fatalf("identity = %+v, want id=100000001 username=admin", id)
+	}
+	if id.Email != nil || id.Avatar != nil {
+		t.Fatalf("email/avatar = %v/%v, want nil", id.Email, id.Avatar)
+	}
+	if id.Status != nil {
+		t.Fatalf("status = %v, want nil (endpoint omits it)", *id.Status)
+	}
+	if id.IsAdmin == nil || !*id.IsAdmin {
+		t.Fatalf("is_admin = %v, want true", id.IsAdmin)
+	}
+}
+
 func TestMeMapsCredentialRejection(t *testing.T) {
 	t.Parallel()
 

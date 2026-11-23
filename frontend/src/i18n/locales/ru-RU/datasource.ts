@@ -551,7 +551,7 @@ export default {
       urlLabel: 'URL конечной точки',
       snippet: {
         httpTitle: 'Streamable HTTP',
-        httpDesc: 'Cursor принимает этот JSON. Для VS Code используйте отдельную вкладку VS Code. Для Claude Desktop нужен доступный HTTPS-адрес и custom connector с No sign-in и Request headers, если эти настройки доступны; иначе используйте запасной STDIO-вариант.',
+        httpDesc: 'Cursor принимает этот JSON. Для VS Code используйте отдельную вкладку VS Code. Для Claude Desktop нужен доступный HTTPS-адрес и custom connector с No sign-in и Request headers, если эти настройки доступны.',
         vscodeTitle: 'VS Code',
         vscodeDesc: 'Вставьте этот JSON в .vscode/mcp.json рабочей папки. Если файл уже содержит серверы, добавьте эту запись в существующий объект servers.',
         claudeCodeTitle: 'Claude Code',

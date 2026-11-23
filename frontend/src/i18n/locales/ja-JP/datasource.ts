@@ -773,7 +773,7 @@ export default {
       urlLabel: 'エンドポイント URL',
       snippet: {
         httpTitle: 'Streamable HTTP',
-        httpDesc: 'Cursor ではこの JSON を使用できます。VS Code では専用の VS Code タブを使用してください。Claude Desktop では到達可能な HTTPS URL を使い、カスタムコネクターで利用可能な場合に No sign-in と Request headers を設定します。それ以外は STDIO の代替設定を使ってください。',
+        httpDesc: 'Cursor ではこの JSON を使用できます。VS Code では専用の VS Code タブを使用してください。Claude Desktop では到達可能な HTTPS URL を使い、カスタムコネクターで利用可能な場合に No sign-in と Request headers を設定します。',
         vscodeTitle: 'VS Code',
         vscodeDesc: 'この JSON をワークスペースの .vscode/mcp.json に貼り付けてください。既存のサーバーがある場合は、既存の servers オブジェクトにこの項目を追加してください。',
         claudeCodeTitle: 'Claude Code',

@@ -279,7 +279,6 @@ import {
   buildHttpClientSnippet,
   buildVsCodeClientSnippet,
   buildMcpEndpointUrl,
-  buildStdioBridgeSnippet,
   groupTools,
 } from './mcpServerIntegration'
 
@@ -336,8 +335,14 @@ const form = reactive({
 })
 const toolSelections = reactive<Record<string, boolean>>({})
 
-const groupedTools = computed(() => groupTools(catalog.value.groups, catalog.value.tools))
-const selectedToolNames = computed(() => catalog.value.tools.filter((tl) => toolSelections[tl.name]).map((tl) => tl.name))
+// The ask tool is not part of the toolset this deployment publishes: it is
+// hidden from the picker and never selected, so an endpoint cannot expose it
+// (and the default-agent section never applies). Editing an endpoint that was
+// created earlier with ask drops it on the next save.
+const HIDDEN_TOOL_NAMES = new Set(['ask'])
+const visibleTools = computed(() => catalog.value.tools.filter((tl) => !HIDDEN_TOOL_NAMES.has(tl.name)))
+const groupedTools = computed(() => groupTools(catalog.value.groups, visibleTools.value))
+const selectedToolNames = computed(() => visibleTools.value.filter((tl) => toolSelections[tl.name]).map((tl) => tl.name))
 const selectedToolCount = computed(() => selectedToolNames.value.length)
 const askSelected = computed(() => toolSelections.ask === true)
 
@@ -345,11 +350,13 @@ const connectSnippets = computed(() => {
   const ep = editing.value
   if (!ep) return []
   const url = endpointUrl(ep)
+  // STDIO bridge is intentionally not offered: this deployment only publishes
+  // native Streamable HTTP endpoints, so the picker stops at the three
+  // HTTP/Bearer variants below.
   return [
     { key: 'http', text: buildHttpClientSnippet(ep.name, url, freshToken.value, ep.id) },
     { key: 'vscode', text: buildVsCodeClientSnippet(ep.name, url, freshToken.value, ep.id) },
     { key: 'claudeCode', text: buildClaudeCodeCommand(ep.name, url, freshToken.value, ep.id) },
-    { key: 'stdio', text: buildStdioBridgeSnippet(ep.name, url, freshToken.value, ep.id) },
   ]
 })
 
@@ -383,7 +390,9 @@ function resetForm(ep: McpEndpoint | null) {
   form.rate_limit_per_minute = ep?.rate_limit_per_minute || 60
   const selected = new Set(ep ? ep.tools : catalog.value.default_tools)
   for (const key of Object.keys(toolSelections)) delete toolSelections[key]
-  for (const tl of catalog.value.tools) toolSelections[tl.name] = selected.has(tl.name)
+  // Hidden tools never enter the selection, even when the API lists them in
+  // default_tools or an existing endpoint already carries them.
+  for (const tl of visibleTools.value) toolSelections[tl.name] = selected.has(tl.name)
 }
 
 async function load() {

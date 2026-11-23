@@ -130,6 +130,27 @@ func (s *OrionCredentialStore) SaveAPIKey(ctx context.Context, apiKey string) er
 	return nil
 }
 
+// ClearAPIKey deletes the platform-wide credential row. It reports whether a row
+// was actually present, so a repeated revoke stays a successful no-op.
+//
+// Only the credential is removed here; the models the key produced are owned by
+// OrionModelSync and must be purged separately (and only after this call, so no
+// sweep can repopulate them).
+func (s *OrionCredentialStore) ClearAPIKey(ctx context.Context) (bool, error) {
+	if s == nil || s.repo == nil {
+		return false, nil
+	}
+	removed, err := s.repo.Delete(ctx, OrionAPIKeySettingKey)
+	if err != nil {
+		return false, fmt.Errorf("clear orion api key failed: %w", err)
+	}
+	if removed {
+		actor, _ := types.UserIDFromContext(ctx)
+		logger.Infof(ctx, "[orion-model] global orion api key cleared by %s", actor)
+	}
+	return removed, nil
+}
+
 // KeyHint renders a display-only mask of the stored key ("sk-***abcd").
 // Returns "" when the key is absent. Never returns the plaintext.
 func (s *OrionCredentialStore) KeyHint(ctx context.Context) (string, error) {

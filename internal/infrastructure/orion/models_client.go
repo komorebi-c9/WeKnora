@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,8 +16,10 @@ import (
 // means the endpoint is not what we think it is.
 const maxCatalogResponseBytes = 8 << 20
 
-// Canonical model types reported by Orion's console catalogue
-// (business/llm/shared/model.rs ModelType, serialised as snake_case).
+// Canonical model types. The gateway catalogue (GET /v1/models) carries no
+// type field, so every entry is bucketed by InferModelType; these strings match
+// Orion's own ModelType values (snake_case), which keeps the buckets stable if
+// richer metadata ever becomes available again.
 const (
 	CatalogTypeChat      = "chat"
 	CatalogTypeEmbedding = "embedding"
@@ -32,15 +33,17 @@ type ModelCatalogEntry struct {
 	// put in the request body's `model` field (a "provider/model" form is
 	// accepted too, but the bare name is stable).
 	Name string
-	// DisplayName is the operator-facing label from Orion; may be empty.
+	// DisplayName is the operator-facing label from Orion; always empty for
+	// the gateway catalogue, which only exposes the model id.
 	DisplayName string
-	// Type is one of catalogType* above, or an unregistered value from Orion.
+	// Type is one of catalogType* above, inferred from the model name.
 	Type string
-	// ContextWindow / MaxTokens are model-declared limits; 0 means unknown.
+	// ContextWindow / MaxTokens are model-declared limits; 0 means unknown,
+	// which is always the case for the gateway catalogue.
 	ContextWindow int
 	MaxTokens     int
-	// Available mirrors Orion's routing readiness: the row is enabled and at
-	// least one candidate can be routed (status=1 and availability != unhealthy).
+	// Available is true for every listed model: the gateway only advertises
+	// what it can serve, and deeper readiness is not exposed.
 	Available bool
 }
 
@@ -60,134 +63,60 @@ type ModelCatalog interface {
 
 // HTTPModelCatalog is the production ModelCatalog.
 type HTTPModelCatalog struct {
-	catalogURL      string
-	openAIModelsURL string
-	embeddingsURL   string
-	timeout         time.Duration
-	http            *http.Client
+	modelsURL     string
+	embeddingsURL string
+	timeout       time.Duration
+	http          *http.Client
 }
 
 // NewModelCatalog builds a client for an Orion service root such as
 // http://192.168.3.139:9298/orion. A non-positive timeout falls back to 10s.
+//
+// The catalogue is read from the OpenAI-compatible gateway face
+// (GET {root}/v1/models), not the console management API: the gateway is the
+// surface inference actually goes through, and the shared License SK is the
+// credential it accepts.
 func NewModelCatalog(baseURL string, timeout time.Duration) *HTTPModelCatalog {
 	root := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	return &HTTPModelCatalog{
-		catalogURL:      root + "/api/models",
-		openAIModelsURL: root + "/v1/models",
-		embeddingsURL:   root + "/v1/embeddings",
-		timeout:         timeout,
-		http:            &http.Client{Timeout: timeout},
+		modelsURL:     root + "/v1/models",
+		embeddingsURL: root + "/v1/embeddings",
+		timeout:       timeout,
+		http:          &http.Client{Timeout: timeout},
 	}
 }
 
-// consoleCatalog is GET /api/models: Orion's {code,message,data} envelope.
-type consoleCatalog struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    struct {
-		Models []struct {
-			ModelName     string `json:"modelName"`
-			DisplayName   string `json:"displayName"`
-			ModelType     string `json:"modelType"`
-			ContextWindow int    `json:"contextWindow"`
-			MaxTokens     int    `json:"maxTokens"`
-			Status        int    `json:"status"`
-			Availability  string `json:"availability"`
-		} `json:"models"`
-	} `json:"data"`
-}
-
-// openAICatalog is GET /v1/models: the OpenAI {object,data} shape.
-type openAICatalog struct {
+// gatewayCatalog is GET /v1/models: the OpenAI {object,data} shape. Orion also
+// adds owned_by and a per-model providers[] list; the synchroniser does not
+// read them because every row is served through the same gateway credential.
+type gatewayCatalog struct {
 	Object string `json:"object"`
 	Data   []struct {
 		ID string `json:"id"`
 	} `json:"data"`
 }
 
-// List prefers the console catalogue (it carries types and limits) and falls
-// back to the OpenAI-shaped catalogue. An authentication failure is returned
-// immediately: retrying the same rejected credential against the second
-// endpoint would only add noise.
+// List reads the OpenAI-compatible gateway catalogue. Each listed id becomes
+// one row, with the type inferred from the name: the gateway face carries no
+// type or limit metadata, and routability can only be discovered by attempting
+// an inference call, so listed models are assumed available.
 func (c *HTTPModelCatalog) List(ctx context.Context, apiKey string) ([]ModelCatalogEntry, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return nil, ErrUnauthorized
 	}
-	if c == nil || c.catalogURL == "" {
+	if c == nil || c.modelsURL == "" {
 		return nil, ErrUnavailable
 	}
 
-	entries, err := c.listConsole(ctx, apiKey)
-	if err == nil {
-		return entries, nil
-	}
-	if errors.Is(err, ErrUnauthorized) {
+	var payload gatewayCatalog
+	if err := c.doJSON(ctx, http.MethodGet, c.modelsURL, apiKey, nil, &payload); err != nil {
 		return nil, err
 	}
 
-	fallback, fallbackErr := c.listOpenAIShape(ctx, apiKey)
-	if fallbackErr != nil {
-		return nil, fmt.Errorf("%w (console catalogue: %v)", fallbackErr, err)
-	}
-	return fallback, nil
-}
-
-// listConsole parses the console catalogue.
-func (c *HTTPModelCatalog) listConsole(ctx context.Context, apiKey string) ([]ModelCatalogEntry, error) {
-	var payload consoleCatalog
-	if err := c.doJSON(ctx, http.MethodGet, c.catalogURL, apiKey, nil, &payload); err != nil {
-		return nil, err
-	}
-	// Orion answers HTTP 200 with a business code in the envelope.
-	if payload.Code != http.StatusOK {
-		if payload.Code == http.StatusUnauthorized || payload.Code == http.StatusForbidden {
-			return nil, ErrUnauthorized
-		}
-		return nil, fmt.Errorf(
-			"%w: code %d: %s", ErrUpstream, payload.Code, strings.TrimSpace(payload.Message),
-		)
-	}
-
-	entries := make([]ModelCatalogEntry, 0, len(payload.Data.Models))
-	seen := make(map[string]struct{}, len(payload.Data.Models))
-	for _, row := range payload.Data.Models {
-		name := strings.TrimSpace(row.ModelName)
-		if name == "" {
-			continue
-		}
-		if _, dup := seen[name]; dup {
-			continue
-		}
-		seen[name] = struct{}{}
-
-		modelType := strings.TrimSpace(row.ModelType)
-		if modelType == "" {
-			modelType = InferModelType(name)
-		}
-		entries = append(entries, ModelCatalogEntry{
-			Name:          name,
-			DisplayName:   strings.TrimSpace(row.DisplayName),
-			Type:          modelType,
-			ContextWindow: row.ContextWindow,
-			MaxTokens:     row.MaxTokens,
-			// status 1 = enabled; availability "stale" self-heals, only
-			// "unhealthy" means nothing can be routed right now.
-			Available: row.Status == 1 && !strings.EqualFold(row.Availability, "unhealthy"),
-		})
-	}
-	return entries, nil
-}
-
-// listOpenAIShape parses the OpenAI catalogue and infers types from names.
-func (c *HTTPModelCatalog) listOpenAIShape(ctx context.Context, apiKey string) ([]ModelCatalogEntry, error) {
-	var payload openAICatalog
-	if err := c.doJSON(ctx, http.MethodGet, c.openAIModelsURL, apiKey, nil, &payload); err != nil {
-		return nil, err
-	}
 	entries := make([]ModelCatalogEntry, 0, len(payload.Data))
 	seen := make(map[string]struct{}, len(payload.Data))
 	for _, row := range payload.Data {
@@ -209,8 +138,8 @@ func (c *HTTPModelCatalog) listOpenAIShape(ctx context.Context, apiKey string) (
 }
 
 // InferModelType mirrors Orion's own probe-import heuristic
-// (shared/model.rs infer_model_type) so the fallback catalogue lands models in
-// the same buckets the console would have reported.
+// (shared/model.rs infer_model_type) so gateway entries land in the same
+// buckets Orion's console catalogue would have reported explicitly.
 func InferModelType(modelName string) string {
 	name := strings.ToLower(modelName)
 	switch {

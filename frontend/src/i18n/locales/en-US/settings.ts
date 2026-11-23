@@ -1154,9 +1154,9 @@ export default {
   defaultSettings: {
     loadFailed: 'Could not load defaults. Retry before editing.',
     title: 'Defaults',
-    description: 'Manage the models and search engine this workspace uses by default, in one place.',
+    description: 'Manage the models this workspace uses by default, in one place.',
     introTitle: 'Used whenever a resource does not pick its own',
-    introDescription: 'A model chosen on an agent, knowledge base or conversation always wins. Otherwise the workspace default here applies, and if none is set, the deployment\'s built-in default is used.',
+    introDescription: 'A model chosen on a knowledge base or conversation always wins. Otherwise the workspace default here applies, and if none is set, the deployment\'s built-in default is used.',
     readOnly: 'Only workspace admins can change these. You can see which defaults are in effect.',
     modelGroup: 'Models',
     webSearchGroup: 'Web search',

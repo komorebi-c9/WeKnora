@@ -26,9 +26,10 @@ func RegisterModelRoutes(
 		if orionHandler != nil {
 			models.GET("/orion/status", g.Viewer(), orionHandler.Status)
 			models.POST("/orion/sync", g.Admin(), orionHandler.Sync)
-			// 全局凭证（所有工作空间共用）：仅平台管理员可读（掩码）/写。
+			// 全局凭证（所有工作空间共用）：仅平台管理员可读（掩码）/写/取消授权。
 			models.GET("/orion/api-key", g.SystemAdmin(), orionHandler.GetAPIKey)
 			models.PUT("/orion/api-key", g.SystemAdmin(), orionHandler.SaveAPIKey)
+			models.DELETE("/orion/api-key", g.SystemAdmin(), orionHandler.DeleteAPIKey)
 		}
 		// 获取模型厂商列表 — Viewer+
 		models.GET("/providers", g.Viewer(), handler.ListModelProviders)

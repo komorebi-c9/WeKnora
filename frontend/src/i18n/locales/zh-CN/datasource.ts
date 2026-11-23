@@ -551,7 +551,7 @@ export default {
       urlLabel: '端点地址',
       snippet: {
         httpTitle: 'Streamable HTTP',
-        httpDesc: 'Cursor 可使用此 JSON。VS Code 请使用独立的 VS Code 选项卡。Claude Desktop 需使用可访问的 HTTPS 地址创建自定义连接器，并在可用时选择「无需登录」和 Request headers；否则使用 STDIO 备用配置。',
+        httpDesc: 'Cursor 可使用此 JSON。VS Code 请使用独立的 VS Code 选项卡。Claude Desktop 需使用可访问的 HTTPS 地址创建自定义连接器，并在可用时选择「无需登录」和 Request headers。',
         vscodeTitle: 'VS Code',
         vscodeDesc: '将此 JSON 写入工作区的 .vscode/mcp.json。若文件中已有服务，请将此条目合并到现有的 servers 对象中。',
         claudeCodeTitle: 'Claude Code',

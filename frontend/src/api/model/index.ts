@@ -261,6 +261,30 @@ export function saveOrionAPIKey(apiKey: string): Promise<void> {
   });
 }
 
+// 取消全局 Orion API Key 授权的结果：deleted_models 是被清掉的同步模型数。
+export interface OrionAPIKeyRevokeResult {
+  deleted_models: number;
+}
+
+// 取消全局 Orion API Key 授权（系统管理员）。后端先清凭证、再同步删除所有
+// 工作空间里由该凭证同步出来的模型，因此返回后前端可直接刷新模型列表。
+export function revokeOrionAPIKey(): Promise<OrionAPIKeyRevokeResult> {
+  return new Promise((resolve, reject) => {
+    del('/api/v1/models/orion/api-key')
+      .then((response: any) => {
+        if (response.success) {
+          resolve((response.data || { deleted_models: 0 }) as OrionAPIKeyRevokeResult);
+        } else {
+          reject(new Error(response.message || ''));
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to revoke Orion api key:', error);
+        reject(error);
+      });
+  });
+}
+
 // 获取单个模型
 export function getModel(id: string): Promise<ModelConfig> {
   return new Promise((resolve, reject) => {

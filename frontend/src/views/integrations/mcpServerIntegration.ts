@@ -16,6 +16,12 @@ export function buildMcpEndpointUrl(apiBaseUrl: string, endpointPath: string): s
 }
 
 /**
+ * Prefix every generated mcpServers key, so a client that already has other
+ * servers never sees this endpoint's slug collide with one of them.
+ */
+export const MCP_SERVER_KEY_PREFIX = 'lolr'
+
+/**
  * Sanitize an endpoint name into an mcpServers key. Names that leave no
  * ASCII characters (e.g. Chinese) fall back to the endpoint id so two such
  * endpoints never collide in the client configuration.
@@ -26,9 +32,9 @@ export function mcpServerKey(name: string, id = ''): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-  if (slug) return `weknora-${slug}`
+  if (slug) return `${MCP_SERVER_KEY_PREFIX}-${slug}`
   const idSlug = (id || '').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()
-  return idSlug ? `weknora-${idSlug}` : 'weknora'
+  return idSlug ? `${MCP_SERVER_KEY_PREFIX}-${idSlug}` : MCP_SERVER_KEY_PREFIX
 }
 
 /** Cursor-compatible JSON for a native Streamable HTTP connection. Other clients use their own setup format. */

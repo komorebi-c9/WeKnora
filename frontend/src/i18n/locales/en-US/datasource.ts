@@ -773,7 +773,7 @@ export default {
       urlLabel: 'Endpoint URL',
       snippet: {
         httpTitle: 'Streamable HTTP',
-        httpDesc: 'Cursor can use this JSON. For VS Code, use the separate VS Code tab. Claude Desktop needs a reachable HTTPS URL and a custom connector with No sign-in and Request headers, when available; otherwise use the STDIO fallback.',
+        httpDesc: 'Cursor can use this JSON. For VS Code, use the separate VS Code tab. Claude Desktop needs a reachable HTTPS URL and a custom connector with No sign-in and Request headers, when available.',
         vscodeTitle: 'VS Code',
         vscodeDesc: 'Paste this JSON into .vscode/mcp.json in your workspace. If the file already contains servers, merge this entry into its servers object.',
         claudeCodeTitle: 'Claude Code',

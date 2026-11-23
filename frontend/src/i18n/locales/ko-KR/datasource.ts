@@ -551,7 +551,7 @@ export default {
       urlLabel: '엔드포인트 URL',
       snippet: {
         httpTitle: 'Streamable HTTP',
-        httpDesc: 'Cursor에서는 이 JSON을 사용할 수 있습니다. VS Code에서는 별도의 VS Code 탭을 사용하세요. Claude Desktop에서는 접근 가능한 HTTPS URL로 사용자 지정 커넥터를 추가하고, 제공되는 경우 No sign-in과 Request headers를 설정하세요. 사용할 수 없으면 STDIO 대체 설정을 사용하세요.',
+        httpDesc: 'Cursor에서는 이 JSON을 사용할 수 있습니다. VS Code에서는 별도의 VS Code 탭을 사용하세요. Claude Desktop에서는 접근 가능한 HTTPS URL로 사용자 지정 커넥터를 추가하고, 제공되는 경우 No sign-in과 Request headers를 설정하세요.',
         vscodeTitle: 'VS Code',
         vscodeDesc: '이 JSON을 작업 영역의 .vscode/mcp.json에 붙여 넣으세요. 기존 서버가 있으면 기존 servers 객체에 이 항목을 병합하세요.',
         claudeCodeTitle: 'Claude Code',

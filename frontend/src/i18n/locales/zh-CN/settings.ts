@@ -379,9 +379,9 @@ export default {
   defaultSettings: {
     loadFailed: '默认设置加载失败，请重试后再编辑。',
     title: '默认配置',
-    description: '集中管理本空间各项功能默认使用的模型和搜索引擎。',
+    description: '集中管理本空间各项功能默认使用的模型。',
     introTitle: '资源未单独指定时使用这里的默认值',
-    introDescription: '智能体、知识库或单次对话明确选择的模型优先；没有选择时使用这里的空间默认；空间也没设置时，使用部署内置的默认模型。',
+    introDescription: '知识库或单次对话明确选择的模型优先；没有选择时使用这里的空间默认；空间也没设置时，使用部署内置的默认模型。',
     readOnly: '仅空间管理员可以修改，你可以查看当前生效的默认值。',
     modelGroup: '模型',
     webSearchGroup: '网络搜索',

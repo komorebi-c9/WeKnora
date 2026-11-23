@@ -287,6 +287,7 @@ const HIDDEN_USER_MENU_ITEMS = new Set<string>([
   'github',
   'logout',
   'models',
+  'systemAdmin',
 ])
 const showUserMenuItem = (key: string) => !HIDDEN_USER_MENU_ITEMS.has(key)
 

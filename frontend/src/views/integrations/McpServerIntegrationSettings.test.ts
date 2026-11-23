@@ -46,7 +46,7 @@ async function fixture() {
     },
   })
   const endpoint = {
-    id: 'endpoint', name: 'Docs', description: '', enabled: true,
+    id: 'endpoint', name: 'Docs', description: '', enabled: true, path: '/mcp/endpoint',
     knowledge_base_ids: ['shared-kb'], tools: ['ask'], default_agent_id: 'agent',
     rate_limit_per_minute: 60,
   }
@@ -63,7 +63,12 @@ async function fixture() {
     '@/api/mcp-endpoint': {
       listMcpEndpoints: async () => ({ data: [endpoint] }),
       getMcpEndpointToolCatalog: async () => ({ data: {
-        groups: ['chat'], tools: [{ name: 'ask', group: 'chat', destructive: false }], default_tools: ['ask'],
+        groups: ['retrieve', 'chat'],
+        tools: [
+          { name: 'search_knowledge', group: 'retrieve', destructive: false },
+          { name: 'ask', group: 'chat', destructive: false },
+        ],
+        default_tools: ['search_knowledge', 'ask'],
       } }),
     },
     './mcpServerIntegration': integration,
@@ -130,6 +135,45 @@ for (const mode of ['create', 'edit'] as const) {
     assert.deepEqual([...f.state.form.knowledge_base_ids], mode === 'create' ? [] : ['shared-kb'])
   })
 }
+
+test('the connection step offers the HTTP snippets and no STDIO fallback', async t => {
+  const f = await fixture()
+  t.after(f.close)
+  f.state.openEdit(f.endpoint, 1, 'mcp_fixture_token')
+  await flush()
+
+  assert.deepEqual(
+    [...f.state.connectSnippets.map((snippet: { key: string }) => snippet.key)],
+    ['http', 'vscode', 'claudeCode'],
+  )
+  assert.match(f.state.connectSnippets[0].text, /"lolr-docs"/)
+})
+
+test('the ask tool stays hidden, unticked and out of the payload', async t => {
+  const f = await fixture()
+  t.after(f.close)
+  f.state.openCreate()
+  await flush()
+
+  assert.deepEqual(f.state.groupedTools.map((group: { group: string }) => group.group), ['retrieve'])
+  assert.equal(f.state.toolSelections.ask, undefined)
+  assert.deepEqual([...f.state.selectedToolNames], ['search_knowledge'])
+  assert.equal(f.state.askSelected, false)
+
+  const payload = f.state.buildPayload()
+  assert.deepEqual([...payload.tools], ['search_knowledge'])
+  assert.equal(payload.default_agent_id, '')
+})
+
+test('an endpoint carrying ask no longer selects it when edited', async t => {
+  const f = await fixture()
+  t.after(f.close)
+  f.state.openEdit(f.endpoint)
+  await flush()
+
+  assert.equal(f.state.toolSelections.ask, undefined)
+  assert.deepEqual([...f.state.buildPayload().tools], [])
+})
 
 test('returning from connection settings preserves unsaved configuration', async t => {
   const f = await fixture()

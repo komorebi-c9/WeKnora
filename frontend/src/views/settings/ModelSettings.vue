@@ -70,7 +70,11 @@
     <div v-if="orionModelEnabled && orionKeyMissing" class="orion-sync-bar orion-sync-bar--warning">
       <div class="orion-sync-bar__info">
         <t-icon name="error-circle" size="16px" />
-        <span class="orion-sync-bar__meta">{{ $t('modelSettings.orion.keyMissing') }}</span>
+        <span class="orion-sync-bar__meta">
+          {{ $t(authStore.isSystemAdmin
+            ? 'modelSettings.orion.keyMissing'
+            : 'modelSettings.orion.keyMissingMember') }}
+        </span>
       </div>
       <t-button v-if="authStore.isSystemAdmin" size="small" variant="outline"
         @click="openOrionKeyDialog">
@@ -78,8 +82,9 @@
       </t-button>
     </div>
 
-    <!-- 全局 Orion API Key 配置（仅平台管理员） -->
-    <t-dialog v-model:visible="orionKeyDialogVisible" :header="$t('modelSettings.orion.apiKeyTitle')"
+    <!-- 全局 Orion API Key 配置（仅平台管理员可渲染，非管理员连弹窗都不存在） -->
+    <t-dialog v-if="authStore.isSystemAdmin" v-model:visible="orionKeyDialogVisible"
+      :header="$t('modelSettings.orion.apiKeyTitle')"
       :confirm-btn="{ content: $t('common.save'), loading: orionKeySaving }" width="480px"
       @confirm="saveOrionKey">
       <t-form label-align="top">
@@ -88,7 +93,15 @@
             :status="orionKeyInvalid ? 'error' : undefined"
             clearable />
         </t-form-item>
-        <p v-if="orionKeyHint" class="orion-key-hint">{{ $t('modelSettings.orion.apiKeyCurrent', { hint: orionKeyHint }) }}</p>
+        <div v-if="orionKeyConfigured && orionKeyHint" class="orion-key-current">
+          <span class="orion-key-hint">
+            {{ $t('modelSettings.orion.apiKeyCurrent', { hint: orionKeyHint }) }}
+          </span>
+          <t-button v-if="authStore.isSystemAdmin" theme="danger" variant="text" size="small"
+            :loading="orionKeyRevoking" @click="confirmRevokeOrionKey">
+            {{ $t('modelSettings.orion.apiKeyRevoke') }}
+          </t-button>
+        </div>
         <p class="orion-key-hint">{{ $t('modelSettings.orion.apiKeyHint') }}</p>
       </t-form>
     </t-dialog>
@@ -357,6 +370,7 @@ import { useAssistantPageContext } from '@/composables/useAssistantPageContext'
 import { useAssistantStore, type AssistantModelDraft } from '@/stores/assistant'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import ModelDebugDrawer from '@/components/ModelDebugDrawer.vue'
+import { useConfirmDelete } from '@/components/settings/useConfirmDelete'
 import {
   listModels,
   createModel,
@@ -367,6 +381,7 @@ import {
   syncOrionModels,
   getOrionAPIKey,
   saveOrionAPIKey,
+  revokeOrionAPIKey,
   type OrionModelStatus,
   type OrionAPIKeyState,
   ModelInUseError,
@@ -396,6 +411,7 @@ import {
 } from '@/utils/contextWindow'
 
 const { t, locale } = useI18n()
+const confirmDelete = useConfirmDelete()
 const authStore = useAuthStore()
 const uiStore = useUIStore()
 const chatResources = useChatResourcesStore()
@@ -456,9 +472,27 @@ const orionKeyDialogVisible = ref(false)
 const orionKeySaving = ref(false)
 const orionKeyInput = ref('')
 const orionKeyHint = ref('')
+// 「取消授权」只在授权成功后出现：configured 由 /models/orion/api-key 的
+// configured 字段驱动，避免仅靠掩码是否为空来判断。
+const orionKeyConfigured = ref(false)
+const orionKeyRevoking = ref(false)
 const orionKeyInvalid = computed(() =>
   orionKeyDialogVisible.value && orionKeyInput.value.trim().length === 0,
 )
+
+const applyOrionKeyState = (state: OrionAPIKeyState | null) => {
+  orionKeyConfigured.value = !!state?.configured
+  orionKeyHint.value = state?.key_hint || ''
+}
+
+const loadOrionKeyState = async () => {
+  if (!authStore.isSystemAdmin) return
+  try {
+    applyOrionKeyState(await getOrionAPIKey())
+  } catch {
+    applyOrionKeyState(null)
+  }
+}
 
 const formatSyncTime = (value?: string) => {
   if (!value) return ''
@@ -496,25 +530,17 @@ const loadOrionState = async () => {
     orionStatus.value = null
   }
   if (authStore.isSystemAdmin) {
-    try {
-      const keyState: OrionAPIKeyState = await getOrionAPIKey()
-      orionKeyHint.value = keyState.key_hint || ''
-    } catch {
-      orionKeyHint.value = ''
-    }
+    await loadOrionKeyState()
   }
 }
 
 const openOrionKeyDialog = async () => {
+  // 全局凭证只属于平台管理员：非管理员即便绕过入口也不打开弹窗。
+  if (!authStore.isSystemAdmin) return
   orionKeyInput.value = ''
   orionKeyDialogVisible.value = true
-  if (!orionKeyHint.value && authStore.isSystemAdmin) {
-    try {
-      const keyState = await getOrionAPIKey()
-      orionKeyHint.value = keyState.key_hint || ''
-    } catch {
-      orionKeyHint.value = ''
-    }
+  if (!orionKeyConfigured.value) {
+    await loadOrionKeyState()
   }
 }
 
@@ -528,14 +554,51 @@ const saveOrionKey = async () => {
     MessagePlugin.success(t('modelSettings.orion.apiKeySaved'))
     orionStatus.value = await getOrionModelStatus().catch(() => orionStatus.value)
     if (authStore.isSystemAdmin) {
-      orionKeyHint.value = await getOrionAPIKey()
-        .then((state) => state.key_hint || '')
-        .catch(() => orionKeyHint.value)
+      try {
+        applyOrionKeyState(await getOrionAPIKey())
+      } catch {
+        // 掩码读取失败不影响保存结果，保留原状态。
+      }
     }
   } catch (error: any) {
     MessagePlugin.error(error?.message || t('modelSettings.orion.apiKeySaveFailed'))
   } finally {
     orionKeySaving.value = false
+  }
+}
+
+// 取消授权是破坏性操作：先弹一次 danger 确认，避免误触直接把全局凭证和
+// 所有已同步的模型清空。
+const confirmRevokeOrionKey = () => {
+  if (!authStore.isSystemAdmin || orionKeyRevoking.value) return
+  confirmDelete({
+    title: t('modelSettings.orion.apiKeyRevokeConfirmTitle'),
+    body: t('modelSettings.orion.apiKeyRevokeConfirm'),
+    confirmText: t('modelSettings.orion.apiKeyRevoke'),
+    cancelText: t('common.cancel'),
+    onConfirm: revokeOrionKey,
+  })
+}
+
+// 取消授权：后端先清凭证再同步删除所有由该凭证同步出来的模型，因此返回后
+// 重新拉一次模型列表即可立即看到清空的效果。
+const revokeOrionKey = async () => {
+  if (!authStore.isSystemAdmin || orionKeyRevoking.value) return
+  orionKeyRevoking.value = true
+  try {
+    const result = await revokeOrionAPIKey()
+    orionKeyDialogVisible.value = false
+    orionKeyInput.value = ''
+    applyOrionKeyState(null)
+    MessagePlugin.success(t('modelSettings.orion.apiKeyRevoked', {
+      count: result.deleted_models,
+    }))
+    await loadModels()
+    orionStatus.value = await getOrionModelStatus().catch(() => orionStatus.value)
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('modelSettings.orion.apiKeyRevokeFailed'))
+  } finally {
+    orionKeyRevoking.value = false
   }
 }
 
@@ -1209,6 +1272,18 @@ useAssistantDataChange(() => { void loadModels() }, { areas: ['model'] })
   color: var(--td-text-color-secondary);
   font-size: 12px;
   word-break: break-all;
+}
+
+.orion-key-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+
+  .orion-key-hint {
+    margin: 0;
+  }
 }
 
 .model-card__orion {

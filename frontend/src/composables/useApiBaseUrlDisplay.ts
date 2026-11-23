@@ -24,7 +24,12 @@ export function useApiBaseUrlDisplay() {
     if (!origin || origin === 'null') {
       origin = ''
     }
-    const base = configured || origin
+    // 子路径部署（如 VITE_BASE_PATH=/lolr-kb/）时 configured 是路径而不是完整
+    // URL；必须锚定到当前 origin，否则 MCP/Chrome 等集成片段会拿到
+    // "/lolr-kb/mcp/..." 这种没有 host 的相对地址。
+    const base = configured
+      ? (configured.startsWith('/') ? `${origin}${configured}` : configured)
+      : origin
     return `${base}/api/v1`
   })
 

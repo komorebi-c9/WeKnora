@@ -143,4 +143,5 @@ export const HIDDEN_SETTINGS_NAV_KEYS = new Set<string>([
   'websearch',
   'model-catalog',
   'platform-api-keys',
+  'system_administration',
 ])

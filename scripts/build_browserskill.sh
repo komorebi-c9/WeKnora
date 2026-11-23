@@ -32,8 +32,42 @@ output_dir="$(cd "$output_dir" && pwd)"
 build_dir="$(mktemp -d /tmp/weknora-bsk-build.XXXXXX)"
 trap 'rm -rf "$build_dir"' EXIT
 
-git clone --no-checkout https://github.com/Tencent/BrowserSkill.git "$build_dir/source"
-git -C "$build_dir/source" checkout --detach "$source_commit"
+# Source repository. Defaults to upstream GitHub; override with
+# BROWSERSKILL_REPO when GitHub is slow/unreachable from the build network,
+# e.g. BROWSERSKILL_REPO=https://gh-proxy.com/https://github.com/Tencent/BrowserSkill.git
+repo_url="${BROWSERSKILL_REPO:-https://github.com/Tencent/BrowserSkill.git}"
+# Some networks break GitHub's HTTP/2 framing (curl 16 / "RPC failed");
+# HTTP/1.1 is the safe default and can be overridden if needed.
+git_http_version="${BROWSERSKILL_GIT_HTTP_VERSION:-HTTP/1.1}"
+fetch_attempts="${BROWSERSKILL_FETCH_ATTEMPTS:-3}"
+
+# Fetch only the pinned commit instead of cloning the whole history: the
+# repository carries large asset branches, so a full clone is both slower and
+# far more likely to hit a transient network error.
+fetch_source() {
+  local dest="$1" attempt=1
+  while [ "$attempt" -le "$fetch_attempts" ]; do
+    rm -rf "$dest"
+    if git init -q "$dest" &&
+       git -C "$dest" remote add origin "$repo_url" &&
+       git -C "$dest" -c http.version="$git_http_version" \
+         fetch --depth 1 origin "$source_commit" &&
+       git -C "$dest" checkout -q --detach FETCH_HEAD; then
+      return 0
+    fi
+    echo "BrowserSkill source fetch failed (attempt $attempt/$fetch_attempts) from $repo_url" >&2
+    attempt=$((attempt + 1))
+    [ "$attempt" -le "$fetch_attempts" ] && sleep $((attempt * 5))
+  done
+  return 1
+}
+
+if ! fetch_source "$build_dir/source"; then
+  echo "Falling back to a full clone from $repo_url" >&2
+  rm -rf "$build_dir/source"
+  git -c http.version="$git_http_version" clone --no-checkout "$repo_url" "$build_dir/source"
+  git -C "$build_dir/source" checkout --detach "$source_commit"
+fi
 (
   cd "$build_dir/source"
   npx --yes pnpm@10.17.0 install --frozen-lockfile

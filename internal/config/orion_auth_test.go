@@ -18,7 +18,7 @@ func TestApplyOrionAuthEnvOverrides(t *testing.T) {
 	if cfg.OrionAuth.BaseURL != "http://192.168.3.139:8000" {
 		t.Fatalf("base url = %q, want trailing slash trimmed", cfg.OrionAuth.BaseURL)
 	}
-	if cfg.OrionAuth.MePath != "/orion/api/auth/current" {
+	if cfg.OrionAuth.MePath != "/orion/v1/iam/me" {
 		t.Fatalf("me path = %q, want default", cfg.OrionAuth.MePath)
 	}
 	if cfg.OrionAuth.TimeoutSeconds != 8 {

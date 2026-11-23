@@ -241,3 +241,53 @@ func (h *OrionModelHandler) SaveAPIKey(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
+
+// orionAPIKeyRevokeResponse reports how many model rows the revoke removed.
+type orionAPIKeyRevokeResponse struct {
+	DeletedModels int `json:"deleted_models"`
+}
+
+// DeleteAPIKey godoc
+// @Summary      取消全局 Orion API Key 授权
+// @Description  清除全局 Orion License SK 并删除所有工作空间中由该凭证同步出来的模型（仅系统管理员）；先清凭证再清模型，避免被重新写回。
+// @Tags         模型管理
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "{deleted_models}"
+// @Failure      500  {object}  errors.AppError         "取消失败"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /models/orion/api-key [delete]
+func (h *OrionModelHandler) DeleteAPIKey(c *gin.Context) {
+	ctx := c.Request.Context()
+	if h.credentials == nil {
+		c.Error(apperrors.NewInternalServerError("orion credential store is unavailable"))
+		return
+	}
+
+	// Clear the credential first. Every sync path treats an empty key as
+	// "not configured" and bails out, so nothing can re-create the rows while
+	// they are being removed.
+	if _, err := h.credentials.ClearAPIKey(ctx); err != nil {
+		logger.Errorf(ctx, "[orion-model] clearing the global credential failed: %v", err)
+		c.Error(apperrors.NewInternalServerError("failed to clear the orion api key"))
+		return
+	}
+
+	// Then drop the models in the same request: the UI refreshes its list right
+	// after the response, so a background purge would leave stale cards behind.
+	deleted := 0
+	if h.sync != nil {
+		count, err := h.sync.PurgeAll(ctx)
+		if err != nil {
+			logger.Warnf(ctx, "[orion-model] removing the models after revoke failed: %v", err)
+			c.Error(apperrors.NewInternalServerError(
+				"the orion api key was cleared but removing the synced models failed"))
+			return
+		}
+		deleted = count
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    orionAPIKeyRevokeResponse{DeletedModels: deleted},
+	})
+}

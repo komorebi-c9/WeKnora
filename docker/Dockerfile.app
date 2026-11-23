@@ -1,8 +1,13 @@
 # Build extension and daemon from the same pinned source on the runtime architecture.
-FROM --platform=$TARGETPLATFORM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS browserskill
+# --platform is intentionally omitted: a FROM without it already defaults to
+# $TARGETPLATFORM, and setting it explicitly triggers BuildKit's
+# RedundantTargetPlatform check.
+FROM node:24-bookworm-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS browserskill
 WORKDIR /build
 # Use the same optional Debian mirror as the Go builder and runtime stages.
-ARG APK_MIRROR_ARG
+# Defaults to the Aliyun mirror so plain `docker build` needs no extra args;
+# pass --build-arg APK_MIRROR_ARG= to fall back to deb.debian.org.
+ARG APK_MIRROR_ARG=mirrors.aliyun.com
 # This base image has no CA certificates. Install them from the original HTTP
 # Debian source before swapping in a mirror: mirrors.tencent.com redirects
 # apt to HTTPS, and that handshake fails without a trust store.
@@ -21,7 +26,22 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --pr
 COPY scripts/build_browserskill.sh scripts/browserskill-release.json ./scripts/
 ARG TARGETOS
 ARG TARGETARCH
-RUN bash scripts/build_browserskill.sh /opt/weknora/browserskill "${TARGETOS}/${TARGETARCH}"
+# BrowserSkill 的源码默认通过 GitHub 加速代理拉取（pinned commit），避免
+# 国内网络直连 github.com 抖动；显式传 --build-arg BROWSERSKILL_REPO= 可回退
+# 到脚本内默认的官方地址，也可换成任何能代理 git smart HTTP 的地址。
+ARG BROWSERSKILL_REPO=https://gh-proxy.com/https://github.com/Tencent/BrowserSkill.git
+# 该阶段会用 npx 拉取 pnpm；默认国内 npm 镜像（阿里/淘宝源）。
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+# 部分网络下 GitHub 的 HTTP/2 framing 会中断（curl 16 / "RPC failed"），
+# 统一强制 HTTP/1.1；git 的低速阈值避免长时间挂死。
+# NOTE: 用 `git config` 写入 ~/.gitconfig，而不是 GIT_CONFIG_KEY_*/VALUE_* 环境
+# 变量——后者会被 BuildKit 的 SecretsUsedInArgOrEnv 检查误判为敏感数据。
+ENV BROWSERSKILL_REPO=${BROWSERSKILL_REPO} \
+    GIT_HTTP_LOW_SPEED_LIMIT=1000 \
+    GIT_HTTP_LOW_SPEED_TIME=30
+RUN git config --global http.version HTTP/1.1 && \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi && \
+    bash scripts/build_browserskill.sh /opt/weknora/browserskill "${TARGETOS}/${TARGETARCH}"
 
 # Build stage
 FROM golang:1.26-bookworm AS builder
@@ -29,10 +49,11 @@ FROM golang:1.26-bookworm AS builder
 WORKDIR /app
 
 # 通过构建参数接收敏感信息
+# 默认走国内 Go 模块代理与 Debian 镜像；传空字符串可回退到官方源。
 ARG GOPRIVATE_ARG
-ARG GOPROXY_ARG
+ARG GOPROXY_ARG=https://goproxy.cn,direct
 ARG GOSUMDB_ARG=off
-ARG APK_MIRROR_ARG
+ARG APK_MIRROR_ARG=mirrors.aliyun.com
 
 # 设置Go环境变量
 ENV GOPRIVATE=${GOPRIVATE_ARG}
@@ -106,7 +127,10 @@ FROM debian:12.12-slim
 
 WORKDIR /app
 
-ARG APK_MIRROR_ARG
+# 默认阿里 Debian 源；传空字符串回退官方源。
+ARG APK_MIRROR_ARG=mirrors.aliyun.com
+# 运行时 pip 依赖（pip/setuptools/wheel）默认走阿里 PyPI 镜像。
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 
 # Pairing derives the gateway URL from the user's page origin by default.
 ENV BROWSERSKILL_BINARY=/opt/weknora/browserskill/bsk \
@@ -133,7 +157,8 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         nodejs npm \
         gosu \
         ffmpeg qpdf && \
-    python3 -m pip install --break-system-packages --upgrade pip setuptools wheel && \
+    python3 -m pip install --break-system-packages --upgrade pip setuptools wheel \
+        -i "$PIP_INDEX_URL" && \
     mkdir -p /home/appuser/.local/bin && \
     curl -LsSf https://astral.sh/uv/install.sh | CARGO_HOME=/home/appuser/.cargo UV_INSTALL_DIR=/home/appuser/.local/bin sh && \
     chown -R appuser:appuser /home/appuser && \

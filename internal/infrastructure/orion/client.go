@@ -1,7 +1,7 @@
 // Package orion talks to the Orion (LoLR) identity service.
 //
 // WeKnora treats Orion as its only identity provider. The single call this
-// package makes is GET /orion/api/auth/current, which validates the caller's
+// package makes is GET /orion/v1/iam/me, which validates the caller's
 // NS-TOKEN and returns the current user's details. The user identity is
 // consumed, including the org-admin flag: an Orion administrator is mirrored
 // as a WeKnora system administrator. The organisation itself (orgId/orgName)
@@ -22,7 +22,7 @@ import (
 
 const (
 	// DefaultMePath is the identity endpoint exposed by Orion.
-	DefaultMePath = "/orion/api/auth/current"
+	DefaultMePath = "/orion/v1/iam/me"
 	// DefaultTimeout bounds one exchange round trip.
 	DefaultTimeout = 5 * time.Second
 	// maxResponseBytes caps how much of an upstream body we are willing to
@@ -103,10 +103,12 @@ type envelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// mePayload mirrors the subset of Orion's CurrentUser that WeKnora stores.
+// mePayload mirrors the subset of the Orion IAM user that WeKnora stores.
 // Field names are camelCase because the Rust struct is serialised with
-// #[serde(rename_all = "camelCase")]. Unknown keys (orgId, orgName, roles,
-// permissions, ...) are ignored by encoding/json on purpose.
+// #[serde(rename_all = "camelCase")]. Unknown keys (orgId, orgName, mobile,
+// myInviteCode, hasPassword, roles, permissions, ...) are ignored by
+// encoding/json on purpose, and status is absent from this endpoint, so it
+// stays nil and callers treat the account as active.
 type mePayload struct {
 	ID       int64   `json:"id"`
 	Name     string  `json:"name"`

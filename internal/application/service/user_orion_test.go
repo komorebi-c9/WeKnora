@@ -191,7 +191,7 @@ func newOrionFixture(t *testing.T, handler http.HandlerFunc) *orionFixture {
 		config: &config.Config{OrionAuth: &config.OrionAuthConfig{
 			Enable:         true,
 			BaseURL:        srv.URL,
-			MePath:         "/orion/api/auth/current",
+			MePath:         "/orion/v1/iam/me",
 			TimeoutSeconds: 2,
 		}},
 	}

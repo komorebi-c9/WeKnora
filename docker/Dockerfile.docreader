@@ -3,7 +3,12 @@
 # =========================
 FROM python:3.10.18-bookworm AS builder
 
-ARG APT_MIRROR=""
+# 默认使用阿里 Debian 源（此处替换值需含 http:// 前缀）；传空字符串回退官方源。
+ARG APT_MIRROR="http://mirrors.aliyun.com"
+# 默认使用阿里 PyPI 镜像；传空字符串回退 pypi.org。
+ARG PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+# 默认通过 GitHub 加速代理下载 protoc 等发布物；传空字符串回退直连。
+ARG GITHUB_PROXY="https://gh-proxy.com/"
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s@http://deb.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources && \
         sed -i "s@http://security.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources; \
@@ -57,7 +62,7 @@ RUN if [ -z "$TARGETARCH" ]; then \
         rm -f /app/${PROTOC_PACKAGE}; \
     else \
         echo "未发现本地protoc安装包，将进行在线安装"; \
-        curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v3.19.4/${PROTOC_PACKAGE} && \
+        curl -LO "${GITHUB_PROXY}https://github.com/protocolbuffers/protobuf/releases/download/v3.19.4/${PROTOC_PACKAGE}" && \
         unzip -o ${PROTOC_PACKAGE} -d /usr/local && \
         chmod +x /usr/local/bin/protoc && \
         rm -f ${PROTOC_PACKAGE}; \
@@ -65,7 +70,11 @@ RUN if [ -z "$TARGETARCH" ]; then \
 
 # 复制依赖文件
 COPY docreader/pyproject.toml docreader/uv.lock ./
-RUN pip install uv --break-system-packages && \
+# NOTE: 不要设置 UV_DEFAULT_INDEX / UV_INDEX_URL。uv.lock 里每个包的 source 固定为
+# https://pypi.org/simple，改索引会让 uv 认为锁文件过期，`--locked` 直接失败。
+# 若要换 PyPI 镜像，必须同时重新生成锁文件（uv lock --default-index ...）。
+# 这里只让 `pip install uv` 本身走国内镜像。
+RUN pip install uv --break-system-packages -i "${PIP_INDEX_URL}" && \
     python -m uv sync --locked --no-dev
 
 # 复制源代码和生成脚本
@@ -85,7 +94,10 @@ ARG VERSION_ARG=unknown
 ARG COMMIT_ID_ARG=unknown
 ENV DOCREADER_VERSION=${VERSION_ARG} DOCREADER_COMMIT_ID=${COMMIT_ID_ARG}
 
-ARG APT_MIRROR=""
+# 默认使用阿里 Debian 源；传空字符串回退官方源。
+ARG APT_MIRROR="http://mirrors.aliyun.com"
+# 默认通过 GitHub 加速代理下载 grpc_health_probe；传空字符串回退直连。
+ARG GITHUB_PROXY="https://gh-proxy.com/"
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s@http://deb.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources && \
         sed -i "s@http://security.debian.org@${APT_MIRROR}@g" /etc/apt/sources.list.d/debian.sources; \
@@ -136,7 +148,7 @@ RUN if [ -z "$TARGETARCH" ]; then \
         "arm") ARCH="arm" ;; \
         *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
     esac && \
-    wget -qO/bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${ARCH} && \
+    wget -qO/bin/grpc_health_probe "${GITHUB_PROXY}https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${ARCH}" && \
     chmod +x /bin/grpc_health_probe
 
 # 从构建阶段复制已安装的依赖和生成的代码
@@ -146,8 +158,9 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# 安装 Playwright 浏览器（网页解析）。可在构建时切换为内部制品库或镜像源。
-ARG PLAYWRIGHT_DOWNLOAD_HOST=""
+# 安装 Playwright 浏览器（网页解析）。默认使用 npmmirror 的 Playwright 镜像；
+# 传空字符串回退官方 CDN，或改为内部制品库地址。
+ARG PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
 ARG PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST=""
 RUN if [ -n "$PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST" ]; then \
         PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST="$PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST" python -m playwright install webkit; \

@@ -189,6 +189,7 @@ export default {
       statusUnknown: '동기화 상태를 불러오는 중…',
       keyNotConfigured: '전역 Orion API Key가 아직 설정되지 않았습니다',
       keyMissing: '전역 Orion API Key가 설정되지 않았습니다. 먼저 설정한 후 동기화하세요.',
+      keyMissingMember: '전역 Orion API Key가 설정되지 않았습니다. 관리자에게 설정을 요청한 후 동기화하세요.',
       empty: 'Orion에서 아직 사용 가능한 모델을 반환하지 않았습니다. 잠시 후 "지금 동기화"를 다시 시도하세요.',
       modelCount: '모델 {count}개',
       lastSync: '마지막 동기화 {time}',
@@ -204,7 +205,12 @@ export default {
       apiKeyCurrent: '현재 자격 증명: {hint}',
       apiKeyHint: '저장 즉시 전체에 적용되며 모든 워크스페이스가 이 자격 증명을 공유합니다. 모델은 백그라운드에서 재동기화됩니다.',
       apiKeySaved: 'Orion API Key가 저장되었습니다. 백그라운드에서 모델을 재동기화하는 중입니다.',
-      apiKeySaveFailed: 'Orion API Key 저장에 실패했습니다. 잠시 후 다시 시도하세요.'
+      apiKeySaveFailed: 'Orion API Key 저장에 실패했습니다. 잠시 후 다시 시도하세요.',
+      apiKeyRevoke: '권한 취소',
+      apiKeyRevokeConfirmTitle: 'Orion 권한 취소',
+      apiKeyRevokeConfirm: '권한을 취소하면 이 자격 증명으로 동기화된 모든 모델이 삭제되며, 다시 설정하기 전에는 복구되지 않습니다. 계속하시겠습니까?',
+      apiKeyRevoked: '권한을 취소하고 동기화된 모델 {count}개를 정리했습니다',
+      apiKeyRevokeFailed: '권한 취소에 실패했습니다. 잠시 후 다시 시도하세요.'
     },
     confirmDelete: '모델 "{name}"을(를) 삭제하시겠습니까?',
     usage: {

@@ -11,8 +11,9 @@
 #     -t wechatopenai/weknora-ui:latest \
 #     frontend/
 #
-# Optional npm mirror (e.g. corporate registry):
-#   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+# npm mirror: defaults to the Aliyun/Taobao mirror for mainland China networks.
+# Override for a corporate registry, or pass NPM_REGISTRY= to use npmjs.org:
+#   --build-arg NPM_REGISTRY=https://mirrors.cloud.tencent.com/npm
 #
 # Docker Desktop with a small VM:
 #   --build-arg NODE_MAX_OLD_SPACE_SIZE=2048
@@ -27,7 +28,8 @@ FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:ba849c60be29959425b8
 
 WORKDIR /frontend
 
-ARG NPM_REGISTRY=
+# 默认国内 npm 镜像（阿里/淘宝源）；传空字符串回退 registry.npmjs.org。
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG NODE_MAX_OLD_SPACE_SIZE=4096
 
 ENV VITE_IS_DOCKER=true
@@ -35,7 +37,11 @@ ENV VITE_IS_DOCKER=true
 ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 
 # The lockfile pins the remote SheetJS archive and its integrity hash.
+# xlsx is a *local* file dependency (file:vendor/xlsx-0.20.2.tgz), and `npm ci`
+# resolves it during install — so vendor/ has to be copied before this layer,
+# otherwise npm fails with ENOENT /frontend/vendor/xlsx-0.20.2.tgz.
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 RUN if [ -n "$NPM_REGISTRY" ]; then \
       npm ci --registry="$NPM_REGISTRY"; \
     else \

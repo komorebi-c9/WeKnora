@@ -417,7 +417,7 @@ type OrionAuthConfig struct {
 	Enable bool `yaml:"enable" json:"enable"`
 	// BaseURL is the Orion origin, e.g. http://192.168.3.139:8000.
 	BaseURL string `yaml:"base_url" json:"base_url"`
-	// MePath is the identity endpoint, defaulting to /orion/api/auth/current.
+	// MePath is the identity endpoint, defaulting to /orion/v1/iam/me.
 	MePath string `yaml:"me_path" json:"me_path"`
 	// TimeoutSeconds bounds one exchange round trip; default 5.
 	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
@@ -999,7 +999,7 @@ func applyOrionAuthEnvOverrides(cfg *Config) {
 
 	cfg.OrionAuth.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.OrionAuth.BaseURL), "/")
 	if strings.TrimSpace(cfg.OrionAuth.MePath) == "" {
-		cfg.OrionAuth.MePath = "/orion/api/auth/current"
+		cfg.OrionAuth.MePath = "/orion/v1/iam/me"
 	}
 	if cfg.OrionAuth.TimeoutSeconds <= 0 {
 		cfg.OrionAuth.TimeoutSeconds = 5

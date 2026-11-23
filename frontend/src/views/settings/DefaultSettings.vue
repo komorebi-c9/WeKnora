@@ -43,31 +43,6 @@
         </div>
       </div>
     </div>
-
-    <template v-if="webSearchSupported">
-      <h3 class="group-title">{{ t('defaultSettings.webSearchGroup') }}</h3>
-      <div class="settings-group">
-        <div class="setting-row">
-          <div class="setting-info">
-            <label>{{ t('defaultSettings.webSearch.label') }}</label>
-            <p class="desc">{{ t('defaultSettings.webSearch.description') }}</p>
-            <p v-if="!webSearchDefaultId" class="desc hint warn">{{ t('defaultSettings.webSearch.unset') }}</p>
-          </div>
-          <div class="setting-control model-control">
-            <t-select
-              :value="webSearchDefaultId"
-              :options="webSearchOptions"
-              :disabled="!canEdit || saving || webSearchLoading"
-              :loading="webSearchLoading"
-              :placeholder="t('defaultSettings.webSearch.placeholder')"
-              clearable
-              style="width: 100%"
-              @change="onWebSearchChange"
-            />
-          </div>
-        </div>
-      </div>
-    </template>
   </div>
 </template>
 
@@ -82,11 +57,9 @@ import {
   updateTenantDefaultSettings,
   type DefaultSettings,
 } from '@/api/default-settings'
-import { patchWebSearchProvider } from '@/api/web-search-provider'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 import { useChatResourcesStore } from '@/stores/chatResources'
-import { useDeploymentCapabilitiesStore } from '@/stores/deploymentCapabilities'
 import {
   effectiveModelDefault,
   effectiveUtilityDefault,
@@ -115,7 +88,6 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const uiStore = useUIStore()
 const chatResources = useChatResourcesStore()
-const deploymentCapabilities = useDeploymentCapabilitiesStore()
 
 const canEdit = computed(() => authStore.hasRole('admin'))
 const saving = ref(false)
@@ -207,53 +179,6 @@ const onModelChange = async (field: ModelField, id: string) => {
   }
 }
 
-const webSearchSupported = computed(() => deploymentCapabilities.isSupported('settings.websearch'))
-const webSearchProviders = computed(() => chatResources.webSearchProviders)
-const webSearchLoading = ref(false)
-
-const webSearchDefaultId = computed(() => webSearchProviders.value.find((p) => p.is_default)?.id || '')
-const webSearchOptions = computed(() =>
-  webSearchProviders.value
-    .filter((p) => p.id)
-    .map((p) => ({ label: p.name, value: p.id as string })),
-)
-
-const loadWebSearchProviders = async () => {
-  webSearchLoading.value = true
-  try {
-    await chatResources.ensureWebSearchProviders(true)
-  } catch (error) {
-    console.error('Failed to load web search providers:', error)
-  } finally {
-    webSearchLoading.value = false
-  }
-}
-
-// Providers keep their own is_default flag; setting one clears the others
-// on the server, so clearing is the only case that targets the old default.
-const onWebSearchChange = async (value: unknown) => {
-  const id = typeof value === 'string' ? value : ''
-  const current = webSearchDefaultId.value
-  if (!canEdit.value || saving.value || webSearchLoading.value || id === current) return
-  saving.value = true
-  try {
-    if (id) {
-      await patchWebSearchProvider(id, { is_default: true })
-    } else if (current) {
-      await patchWebSearchProvider(current, { is_default: false })
-    }
-    for (const provider of webSearchProviders.value) {
-      provider.is_default = provider.id === id
-    }
-    await loadWebSearchProviders()
-    MessagePlugin.success(t('defaultSettings.toasts.saveSuccess'))
-  } catch (error: any) {
-    MessagePlugin.error(t('defaultSettings.toasts.saveFailed', { message: error?.message || '' }))
-  } finally {
-    saving.value = false
-  }
-}
-
 const openModels = (type: DefaultModelType) => {
   const subsection = type === 'KnowledgeQA' ? 'chat' : type === 'VLLM' ? 'vllm' : type.toLowerCase()
   uiStore.openSettings('models', subsection)
@@ -265,7 +190,6 @@ const openModels = (type: DefaultModelType) => {
 onMounted(() => {
   void chatResources.ensureModels(true).catch(() => {})
   void loadSettings()
-  if (webSearchSupported.value) void loadWebSearchProviders()
 })
 </script>
 

@@ -1,0 +1,69 @@
+# ---------------------------------------------------------------------------
+# 前缀兼容（WEKNORA_BASE_PATH，例如 /lolr-kb）
+#
+# 背景：前端以 VITE_BASE_PATH=/lolr-kb/ 构建，浏览器会请求 /lolr-kb/assets/...
+# 与 /lolr-kb/api/... 。经 Orion 网关访问时网关会剥掉该前缀；直连容器（或经
+# 不剥前缀的反代）时由下面这段在本容器内剥掉，两种入口都能工作。
+#
+# 注意：rewrite 的 $1 与 nginx 变量不能被 envsubst 吃掉（入口脚本只替换白名单变量）。
+# ---------------------------------------------------------------------------
+
+location = ${BASE_PATH} {
+    return 301 ${BASE_PATH}/;
+}
+
+location = ${BASE_PATH}/health {
+    proxy_pass ${APP_SCHEME}://${APP_HOST}:${APP_PORT}/health;
+    proxy_set_header Host $http_host;
+    access_log off;
+}
+
+location ^~ ${BASE_PATH}/api/ {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    proxy_pass ${APP_SCHEME}://${APP_HOST}:${APP_PORT};
+    include /etc/nginx/api-proxy.conf;
+}
+
+location ^~ ${BASE_PATH}/mcp/ {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    proxy_pass ${APP_SCHEME}://${APP_HOST}:${APP_PORT};
+    include /etc/nginx/api-proxy.conf;
+}
+
+location = ${BASE_PATH}/files {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    proxy_pass ${APP_SCHEME}://${APP_HOST}:${APP_PORT};
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location ^~ ${BASE_PATH}/r/ {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    proxy_pass ${APP_SCHEME}://${APP_HOST}:${APP_PORT};
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location ^~ ${BASE_PATH}/embed/ {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    root /usr/share/nginx/html;
+    try_files /embed.html =404;
+    add_header Cache-Control "no-store" always;
+}
+
+location ^~ ${BASE_PATH}/assets/ {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    root /usr/share/nginx/html;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+}
+
+location ^~ ${BASE_PATH}/ {
+    rewrite ^${BASE_PATH}(/.*)$ $1 break;
+    root /usr/share/nginx/html;
+    try_files $uri $uri/ /index.html;
+    add_header Cache-Control "no-cache, must-revalidate" always;
+}

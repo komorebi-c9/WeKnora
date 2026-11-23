@@ -181,6 +181,11 @@ func (f *fakeModelRepo) ReconcileManaged(
 type fakeCredentialStore struct {
 	key string
 	err error
+	// configuredCalls counts Configured probes; configuredLimit, when positive,
+	// makes every probe past the limit report "not configured". Used to simulate
+	// a revoke that lands while a sweep is already running.
+	configuredCalls int
+	configuredLimit int
 }
 
 func (f *fakeCredentialStore) GetAPIKey(context.Context) (string, error) {
@@ -193,7 +198,14 @@ func (f *fakeCredentialStore) SaveAPIKey(_ context.Context, key string) error {
 }
 
 func (f *fakeCredentialStore) Configured(context.Context) (bool, error) {
-	return f.key != "", f.err
+	f.configuredCalls++
+	if f.err != nil {
+		return false, f.err
+	}
+	if f.configuredLimit > 0 && f.configuredCalls > f.configuredLimit {
+		return false, nil
+	}
+	return f.key != "", nil
 }
 
 func (f *fakeCredentialStore) KeyHint(context.Context) (string, error) {
@@ -536,6 +548,63 @@ func TestOrionModelIDIsBoundedAndURLSafe(t *testing.T) {
 		OrionModelID(testTenantID, "vlm", "same"),
 		"chat and vision rows of the same model need distinct ids",
 	)
+}
+
+// A revoke clears the credential, and from that moment a running sweep must stop
+// instead of repopulating the rows the purge is about to remove.
+func TestSyncAllAbortsWhenCredentialIsRevokedMidSweep(t *testing.T) {
+	repo := newFakeModelRepo()
+	catalog := &stubOrionCatalog{entries: testEntries(), dimension: 1024}
+	// The first probe (workspace 1) still sees the credential; every later one
+	// sees it gone, which is what a revoke landing mid-sweep looks like.
+	store := &fakeCredentialStore{key: "sk-global", configuredLimit: 1}
+	sync := newTestSync(catalog, repo, store, defaultTenants(1, 2, 3))
+
+	sync.SyncAll(context.Background())
+
+	synced, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, 1)
+	require.NoError(t, err)
+	assert.Len(t, synced, 4)
+	for _, tenantID := range []uint64{2, 3} {
+		rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, tenantID)
+		require.NoError(t, err)
+		assert.Empty(t, rows, "the sweep must abort once the credential is gone")
+	}
+}
+
+func TestPurgeAllClearsEveryWorkspaceAndKeepsForeignRows(t *testing.T) {
+	manual := &types.Model{
+		ID: "manual-embed", TenantID: 1, Name: "manual", Type: types.ModelTypeEmbedding,
+		Source: types.ModelSourceRemote, Status: types.ModelStatusActive,
+	}
+	repo := newFakeModelRepo(manual)
+	catalog := &stubOrionCatalog{entries: testEntries(), dimension: 1024}
+	store := &fakeCredentialStore{key: "sk-global"}
+	sync := newTestSync(catalog, repo, store, defaultTenants(1, 2, 3))
+	sync.SyncAll(context.Background())
+	require.Len(t, repo.rows, 13, "12 synced rows + 1 hand-created row")
+
+	// Revoke: the credential is cleared first, then the models go.
+	store.key = ""
+	deleted, err := sync.PurgeAll(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 12, deleted)
+
+	rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, 0)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "no workspace may keep a row synced from the revoked key")
+	_, kept := repo.rows[manual.ID]
+	assert.True(t, kept, "hand-created models are never touched")
+
+	status := sync.Status(context.Background(), 1)
+	assert.False(t, status.KeyConfigured)
+	assert.Equal(t, 0, status.ModelCount)
+	assert.True(t, status.LastSyncAt.IsZero(), "the purge forgets the previous sync")
+
+	// A second revoke (the UI retrying after a partial failure) is a no-op.
+	deleted, err = sync.PurgeAll(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 0, deleted)
 }
 
 func TestSyncTenantDisabled(t *testing.T) {

@@ -352,6 +352,7 @@ export default {
       statusUnknown: 'Reading sync status…',
       keyNotConfigured: 'The global Orion API key is not configured yet',
       keyMissing: 'The global Orion API key is not configured. Configure it first, then sync.',
+      keyMissingMember: 'The global Orion API key is not configured. Contact your administrator to configure it, then sync.',
       empty: 'Orion has not returned any usable model yet. Try "Sync now" again shortly.',
       modelCount: '{count} models',
       lastSync: 'Last synced {time}',
@@ -367,7 +368,12 @@ export default {
       apiKeyCurrent: 'Current credential: {hint}',
       apiKeyHint: 'Saving takes effect immediately for the whole platform; every workspace shares this credential, and models are re-synced in the background.',
       apiKeySaved: 'Orion API key saved. Models are being re-synced in the background.',
-      apiKeySaveFailed: 'Failed to save the Orion API key. Please try again later.'
+      apiKeySaveFailed: 'Failed to save the Orion API key. Please try again later.',
+      apiKeyRevoke: 'Revoke authorization',
+      apiKeyRevokeConfirmTitle: 'Revoke the Orion authorization',
+      apiKeyRevokeConfirm: 'Revoking removes every model synced with this credential, and they only come back after you configure a key again. Continue?',
+      apiKeyRevoked: 'Authorization revoked; {count} synced models removed',
+      apiKeyRevokeFailed: 'Failed to revoke the authorization. Please try again later.'
     },
     typeShort: {
       chat: 'Chat',
