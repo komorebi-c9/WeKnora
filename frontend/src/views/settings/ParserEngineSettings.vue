@@ -21,7 +21,7 @@
     </div>
 
     <template v-else>
-      <div v-if="engines.length === 0 && !hasBuiltinEngine" class="empty-state">
+      <div v-if="visibleEngines.length === 0 && !hasBuiltinEngine" class="empty-state">
         <p class="empty-text">{{ $t('settings.parser.noEngineDetected') }}</p>
       </div>
 
@@ -423,6 +423,7 @@ import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { MessagePlugin } from 'tdesign-vue-next'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
+import { HIDDEN_PARSER_ENGINE_NAMES } from '@/config/uiVisibility'
 import {
   getParserEngines,
   getParserEngineConfig,
@@ -493,7 +494,12 @@ const saveSuccess = ref(false)
 const checking = ref(false)
 const checkMessage = ref('')
 
-const hasBuiltinEngine = computed(() => engines.value.some(e => e.Name === 'builtin'))
+// 交付期可隐藏的引擎卡片（见 @/config/uiVisibility），只影响本页展示。
+const visibleEngines = computed(() =>
+  engines.value.filter(e => !HIDDEN_PARSER_ENGINE_NAMES.has(e.Name))
+)
+
+const hasBuiltinEngine = computed(() => visibleEngines.value.some(e => e.Name === 'builtin'))
 
 const drawerVisible = ref(false)
 const currentEngine = ref<ParserEngineInfo | null>(null)
@@ -527,7 +533,7 @@ const ENGINE_ORDER: Record<string, number> = {
 }
 
 const sortedEngines = computed(() => {
-  return [...engines.value].sort((a, b) => {
+  return [...visibleEngines.value].sort((a, b) => {
     const oa = ENGINE_ORDER[a.Name] ?? 100
     const ob = ENGINE_ORDER[b.Name] ?? 100
     if (oa !== ob) return oa - ob

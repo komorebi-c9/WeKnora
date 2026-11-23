@@ -17,6 +17,9 @@
  *   ④ 共享空间设置弹窗的分区菜单
  *      → 本文件的 HIDDEN_ORG_SETTINGS_SECTIONS
  *
+ *   ⑤ 解析引擎设置的引擎卡片
+ *      → 本文件的 HIDDEN_PARSER_ENGINE_NAMES
+ *
  * 往对应集合里加 key 即隐藏，删掉即恢复。
  */
 
@@ -80,6 +83,15 @@ export type HiddenOrgSettingsSectionKey = (typeof HIDDEN_ORG_SETTINGS_SECTION_KE
 export const HIDDEN_ORG_SETTINGS_SECTIONS = new Set<HiddenOrgSettingsSectionKey>([
   'sharedAgents',
 ])
+
+/**
+ * 解析引擎设置（../views/settings/ParserEngineSettings.vue）里要隐藏的引擎卡片。
+ * 引擎名取自后端引擎注册表（internal/infrastructure/docparser/engines.go）。
+ * 加进来即不渲染该卡片，删掉即恢复；后端接口与知识库解析规则不受影响。
+ *
+ *   weknoracloud → Lolr Ai Cloud（云端文档解析，需 APPID/APPSECRET）
+ */
+export const HIDDEN_PARSER_ENGINE_NAMES = new Set<string>(['weknoracloud'])
 
 /**
  * 空间「成员管理」页（../views/settings/TenantMembers.vue）可隐藏的操作按钮。
