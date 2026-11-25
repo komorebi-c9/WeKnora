@@ -3392,7 +3392,7 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
     transition: all var(--app-motion-instant) ease;
 
     &:hover:not(:disabled) {
-      color: var(--td-success-color);
+      color: var(--td-brand-color);
       background: var(--td-bg-color-container);
     }
 
@@ -3525,7 +3525,7 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
   padding: 0;
 
   &:hover:not(:disabled) {
-    background: var(--td-success-color-light);
+    background: var(--td-brand-color-light);
     color: var(--td-brand-color);
     box-shadow: none;
   }

@@ -3298,7 +3298,7 @@ watch(() => entries.value.map(e => ({
     transition: all var(--app-motion-instant) ease;
 
     &:hover:not(:disabled) {
-      color: var(--td-success-color);
+      color: var(--td-brand-color);
       background: var(--td-bg-color-container);
     }
 
@@ -3569,7 +3569,7 @@ watch(() => entries.value.map(e => ({
   padding: 0;
 
   &:hover:not(:disabled) {
-    background: var(--td-success-color-light);
+    background: var(--td-brand-color-light);
     color: var(--td-brand-color);
   }
 

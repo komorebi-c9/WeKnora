@@ -105,6 +105,6 @@ export const HIDDEN_TENANT_MEMBER_ACTION_KEYS = ['invite', 'share-link'] as cons
 export type HiddenTenantMemberActionKey = (typeof HIDDEN_TENANT_MEMBER_ACTION_KEYS)[number]
 
 export const HIDDEN_TENANT_MEMBER_ACTIONS = new Set<HiddenTenantMemberActionKey>([
-  // 'invite',
-  // 'share-link',
+  'invite',
+  'share-link',
 ])
