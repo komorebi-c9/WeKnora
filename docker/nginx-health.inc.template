@@ -1,4 +1,5 @@
-# 容器内健康检查入口：kubelet/Orion 探针打 80 端口即可，不依赖被代理的应用路径。
+# 容器内健康检查入口：kubelet/Orion 探针打 nginx 监听端口即可（单镜像默认 15173，见 NGINX_LISTEN_PORT），
+# 不依赖被代理的应用路径。
 location = /health {
     proxy_pass ${APP_SCHEME}://${APP_HOST}:${APP_PORT}/health;
     proxy_set_header Host $http_host;

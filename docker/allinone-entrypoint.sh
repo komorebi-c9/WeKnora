@@ -11,6 +11,16 @@ export APP_SCHEME="${APP_SCHEME:-http}"
 export DOCREADER_ADDR="${DOCREADER_ADDR:-127.0.0.1:50051}"
 export DOCREADER_IMAGE_OUTPUT_DIR="${DOCREADER_IMAGE_OUTPUT_DIR:-/tmp/docreader}"
 
+# nginx 对外监听端口（镜像默认 15173，可用 NGINX_LISTEN_PORT 覆盖）。
+# 只影响容器内 nginx；宿主机端口仍由 compose 的 ports 决定。
+export NGINX_LISTEN_PORT="${NGINX_LISTEN_PORT:-15173}"
+case "${NGINX_LISTEN_PORT}" in
+    ''|*[!0-9]*)
+        echo "weknora: NGINX_LISTEN_PORT must be a number, got '${NGINX_LISTEN_PORT}'" >&2
+        exit 1
+        ;;
+esac
+
 # 前端构建期 base 与这里必须一致（Dockerfile 的 VITE_BASE_PATH）。
 # 该前缀仅用于"直连容器"与本地验证；经 Orion 网关访问时前缀已被网关剥掉。
 BASE_PATH="${WEKNORA_BASE_PATH:-/lolr-kb}"
@@ -58,11 +68,21 @@ export MAX_SKILL_BUNDLE_SIZE=${SKILL_MB}M
 envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME}' \
     < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
 
+# frontend/nginx.conf 里 server 监听固定写的是 `listen 80;`（标准前端镜像也用这份
+# 模板），这里只改本容器渲染出来的副本：按 NGINX_LISTEN_PORT 替换，默认 15173。
+# 只匹配行首的 listen 指令，注释里的示例 server 块不受影响。
+sed -i "s/^\([[:space:]]*\)listen 80;/\1listen ${NGINX_LISTEN_PORT};/" \
+    /etc/nginx/conf.d/default.conf
+if ! grep -q "listen ${NGINX_LISTEN_PORT};" /etc/nginx/conf.d/default.conf; then
+    echo "weknora: failed to set nginx listen port to ${NGINX_LISTEN_PORT}" >&2
+    exit 1
+fi
+
 # 健康检查入口（所有形态都注入，供 kubelet/Orion 探针与负载均衡使用）
 envsubst '${APP_HOST} ${APP_PORT} ${APP_SCHEME}' \
     < /etc/nginx/templates/health.inc.template > /etc/nginx/conf.d/weknora-prefix.inc
 
-# 前缀兼容：让容器在"直连 :80/lolr-kb/"与"网关已剥前缀"两种入口下都能工作
+# 前缀兼容：让容器在"直连 :15173/lolr-kb/"与"网关已剥前缀"两种入口下都能工作
 if [ -n "$BASE_PATH" ]; then
     export BASE_PATH
     envsubst '${BASE_PATH} ${APP_HOST} ${APP_PORT} ${APP_SCHEME}' \
