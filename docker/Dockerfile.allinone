@@ -2,11 +2,12 @@
 # WeKnora 单镜像（方案 A）：frontend(nginx) + app(Go) + docreader(Python)
 #
 # 三个进程由 supervisord 在同一容器内拉起，进程间通过回环地址通信：
-#   nginx :80  ->  127.0.0.1:8080 (app)  ->  127.0.0.1:50051 (docreader)
+#   nginx :15173 (NGINX_LISTEN_PORT)  ->  127.0.0.1:8080 (app)  ->  127.0.0.1:50051 (docreader)
 #
-# 最终底座必须是 python:3.10.18-bookworm：
+# 最终底座必须是 python:3.10.18-slim-bookworm：
 #   docreader 的 venv 在 python:3.10.18 下构建（pyproject requires-python >= 3.10.18），
-#   换底座会破坏 venv 的解释器路径。
+#   slim 与 full 的解释器同为 /usr/local/bin/python3.10，venv 路径不受影响；
+#   但 slim 能省掉 full 版 buildpack-deps 携带的 gcc/git/man 等约 800MB。
 #
 # 构建示例（本地验证）：
 #   docker build -f docker/Dockerfile.allinone \
@@ -61,13 +62,14 @@ WORKDIR /app
 ARG GOPRIVATE_ARG
 ARG GOPROXY_ARG=https://goproxy.cn,direct
 ARG GOSUMDB_ARG=off
-ARG APK_MIRROR_ARG=mirrors.aliyun.com
+ARG APK_MIRROR_ARG=repo.huaweicloud.com
 
 ENV GOPRIVATE=${GOPRIVATE_ARG}
 ENV GOPROXY=${GOPROXY_ARG}
 ENV GOSUMDB=${GOSUMDB_ARG}
 
-RUN if [ -n "$APK_MIRROR_ARG" ]; then \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
     apt-get update && \
@@ -139,12 +141,13 @@ FROM python:3.10.18-bookworm AS drbuild
 
 WORKDIR /app
 
-ARG APT_MIRROR=mirrors.aliyun.com
+ARG APT_MIRROR=repo.huaweicloud.com
 ARG PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
 
-# 兼容 "mirrors.aliyun.com" 与 "http(s)://mirrors.aliyun.com" 两种写法：
+# 兼容 "repo.huaweicloud.com" 与 "http(s)://repo.huaweicloud.com" 两种写法：
 # deb822 的 URIs 里带协议，这里只替换 host 部分。
-RUN APT_HOST="${APT_MIRROR#http://}"; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    APT_HOST="${APT_MIRROR#http://}"; \
     APT_HOST="${APT_HOST#https://}"; \
     APT_HOST="${APT_HOST%/}"; \
     if [ -n "$APT_HOST" ]; then \
@@ -160,16 +163,18 @@ RUN APT_HOST="${APT_MIRROR#http://}"; \
 COPY docreader/pyproject.toml docreader/uv.lock ./
 # 不能直接设 UV_DEFAULT_INDEX 后 `uv sync --locked`：uv.lock 的 source 固定为 pypi.org，
 # 换索引会让 uv 判定锁文件过期、--locked 直接失败。
-# 这里改为：从锁文件导出精确版本清单（uv export --frozen），再用 pip + 国内镜像安装。
-# 好处是完全复用 uv.lock 的版本/哈希，同时所有下载都走国内 PyPI 镜像。
+# 这里改为：从锁文件导出精确版本清单（uv export --frozen），再用 `uv pip install`
+# 从国内镜像安装（完全复用 uv.lock 的版本/哈希）。
+# 用 uv 而非 pip 的原因：镜像站对 HTTP/1.1 单连接限速 ~0.25MB/s，uv 走 HTTP/2 且并行，
+# 700MB 依赖从 ~40 分钟降到 ~2 分钟。
 RUN python -m venv /app/.venv && \
-    /app/.venv/bin/pip install --no-cache-dir --upgrade pip -i "${PIP_INDEX_URL}" && \
     pip install --no-cache-dir uv -i "${PIP_INDEX_URL}"
 
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,target=/root/.cache/uv \
     python -m uv export --frozen --no-dev --no-emit-project \
         --format requirements-txt -o /tmp/requirements.txt && \
-    /app/.venv/bin/pip install -i "${PIP_INDEX_URL}" --no-deps -r /tmp/requirements.txt
+    python -m uv pip install --python /app/.venv/bin/python --no-deps \
+        --index-url "${PIP_INDEX_URL}" -r /tmp/requirements.txt
 
 COPY docreader docreader
 
@@ -186,9 +191,9 @@ RUN python -m grpc_tools.protoc -Idocreader/proto \
 # ---------------------------------------------------------------------------
 # 4) 最终运行镜像
 # ---------------------------------------------------------------------------
-FROM python:3.10.18-bookworm
+FROM python:3.10.18-slim-bookworm
 
-ARG APT_MIRROR=mirrors.aliyun.com
+ARG APT_MIRROR=repo.huaweicloud.com
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
 ARG GITHUB_PROXY=https://gh-proxy.com/
@@ -205,7 +210,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # 默认阿里 Debian 源；传空字符串回退官方源。
 # 兼容 "mirrors.aliyun.com" 与 "http(s)://mirrors.aliyun.com" 两种写法：
 # deb822 的 URIs 里带协议，这里只替换 host 部分。
-RUN APT_HOST="${APT_MIRROR#http://}"; \
+# 字体清单与 Dockerfile.docreader 保持一致（显式列举，不含 fonts-noto-extra），
+# 保证 LibreOffice 转 PDF 时同一文档在两种部署形态下渲染/解析一致。
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    APT_HOST="${APT_MIRROR#http://}"; \
     APT_HOST="${APT_HOST#https://}"; \
     APT_HOST="${APT_HOST%/}"; \
     if [ -n "$APT_HOST" ]; then \
@@ -216,6 +224,7 @@ RUN APT_HOST="${APT_MIRROR#http://}"; \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates bash sed vim wget gnupg tar dpkg tzdata curl \
+        git xz-utils bzip2 unzip \
         nginx gettext-base gosu \
         build-essential libsqlite3-0 \
         postgresql-client default-mysql-client \
@@ -223,7 +232,13 @@ RUN APT_HOST="${APT_MIRROR#http://}"; \
         ffmpeg qpdf antiword \
         libjpeg62-turbo libgl1 libglib2.0-0 libxinerama1 libfontconfig1 \
         libdbus-glib-1-2 libcairo2 libcups2 libglu1-mesa libsm6 \
-        openjdk-17-jre-headless libreoffice && \
+        openjdk-17-jre-headless libreoffice \
+        fonts-wqy-zenhei fonts-noto-core fonts-noto-mono fonts-noto-ui-core \
+        fonts-noto-color-emoji fonts-liberation fonts-liberation2 \
+        fonts-dejavu-core fonts-dejavu-extra fonts-crosextra-carlito \
+        fonts-crosextra-caladea fonts-freefont-ttf fonts-linuxlibertine \
+        fonts-sil-gentium fonts-sil-gentium-basic fonts-ipafont-gothic \
+        fonts-tlwg-loma-otf fonts-unifont fonts-opensymbol && \
     rm -rf /var/lib/apt/lists/* && \
     rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
@@ -263,13 +278,38 @@ COPY --from=appbuild /license-bundle/ /app/
 COPY --from=drbuild /app/.venv /app/.venv
 COPY --from=drbuild /app/docreader /app/docreader
 
-# Playwright WebKit（网页解析）——装到 /opt/pw-browsers，非 root 也可读
-RUN if [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then \
+# Playwright WebKit（网页解析）——最终装在 /opt/pw-browsers，非 root 也可读。
+# playwright 自带下载器走 HTTP/1.1 单连接（被限速 ~0.25MB/s），先用 curl(HTTP/2)
+# 预取到 cache，再起本地 http 服务安装（实测 1.2 秒）；失败则回退在线安装。
+# 下载/解压全在 BuildKit cache 内，上游层变动重跑本层时无需重新下载。
+ARG PLAYWRIGHT_PREFETCH_BASE=https://npmmirror.com/mirrors/playwright
+RUN --mount=type=cache,target=/root/.pw-cache \
+    --mount=type=cache,target=/root/.pw-zip \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    export PLAYWRIGHT_BROWSERS_PATH=/root/.pw-cache; \
+    url=$(/app/.venv/bin/python -m playwright install --dry-run webkit \
+            | sed -n 's/^[[:space:]]*Download fallback 2:[[:space:]]*//p' | head -1); \
+    path=${url#*://*/}; \
+    zip="/root/.pw-zip/$path"; \
+    if [ -n "$path" ] && [ ! -s "$zip" ]; then \
+        mkdir -p "$(dirname "$zip")"; \
+        curl -fsSL --retry 2 -o "$zip.part" "${PLAYWRIGHT_PREFETCH_BASE}/${path}" \
+            && mv "$zip.part" "$zip" || rm -f "$zip.part"; \
+    fi; \
+    if [ -s "$zip" ]; then \
+        (cd /root/.pw-zip && python3 -m http.server 8899 >/dev/null 2>&1 & echo $! > /tmp/pw.pid); \
+        sleep 1; \
+        PLAYWRIGHT_DOWNLOAD_HOST=http://127.0.0.1:8899 /app/.venv/bin/python -m playwright install webkit \
+            || /app/.venv/bin/python -m playwright install webkit; \
+        kill "$(cat /tmp/pw.pid)" 2>/dev/null; \
+    elif [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then \
         PLAYWRIGHT_DOWNLOAD_HOST="$PLAYWRIGHT_DOWNLOAD_HOST" /app/.venv/bin/python -m playwright install webkit; \
     else \
         /app/.venv/bin/python -m playwright install webkit; \
-    fi && \
-    /app/.venv/bin/python -m playwright install-deps webkit && \
+    fi; \
+    /app/.venv/bin/python -m playwright install-deps webkit; \
+    mkdir -p /opt/pw-browsers; \
+    cp -a /root/.pw-cache/. /opt/pw-browsers/; \
     chmod -R a+rX /opt/pw-browsers
 
 # ---------------- 前端与 nginx ----------------
@@ -298,7 +338,9 @@ RUN useradd -m -s /bin/bash appuser && \
     chown -R appuser:appuser /app /data/files /home/appuser && \
     chmod +x /app/scripts/*.sh
 
-EXPOSE 80
+# nginx 监听端口默认 15173，运行时可由 NGINX_LISTEN_PORT 覆盖；
+# EXPOSE 仅作声明，实际对外端口由 compose/`docker run -p` 决定。
+EXPOSE 15173
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
     CMD ["/usr/local/bin/allinone-healthcheck.sh"]

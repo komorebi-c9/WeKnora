@@ -17,5 +17,9 @@ data
 !.env.example
 **/__pycache__
 **/*.pyc
+# 本地开发用的 Python 虚拟环境绝不能进构建上下文：
+# docreader/.venv 会被 drbuild 阶段的 `COPY docreader docreader` 带进镜像（约 600MB）
+**/.venv
+.venv
 miniprogram
 helm

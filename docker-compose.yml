@@ -43,7 +43,7 @@ services:
       args:
         # 构建依赖源默认走国内镜像（阿里 Debian / goproxy.cn / 淘宝 npm /
         # GitHub 加速）。显式赋空字符串即可回退到官方源。
-        - APK_MIRROR_ARG=${APK_MIRROR_ARG:-mirrors.aliyun.com}
+        - APK_MIRROR_ARG=${APK_MIRROR_ARG:-repo.huaweicloud.com}
         - GOPROXY_ARG=${GOPROXY_ARG:-https://goproxy.cn,direct}
         - WITH_ANYDOC=${WITH_ANYDOC:-1}
         - BROWSERSKILL_REPO=${BROWSERSKILL_REPO:-https://gh-proxy.com/https://github.com/Tencent/BrowserSkill.git}
@@ -452,7 +452,7 @@ services:
       args:
         # 默认国内源：阿里 Debian / 阿里 PyPI / npmmirror Playwright /
         # GitHub 加速；显式赋空字符串可回退官方源。
-        - APT_MIRROR=${APT_MIRROR:-http://mirrors.aliyun.com}
+        - APT_MIRROR=${APT_MIRROR:-http://repo.huaweicloud.com}
         - PIP_INDEX_URL=${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         - GITHUB_PROXY=${GITHUB_PROXY:-https://gh-proxy.com/}
         - PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-https://npmmirror.com/mirrors/playwright}

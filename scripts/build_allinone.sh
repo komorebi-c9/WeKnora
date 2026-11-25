@@ -71,8 +71,8 @@ docker buildx build \
     --build-arg WITH_ANYDOC="${WITH_ANYDOC}" \
     --build-arg NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}" \
     --build-arg GOPROXY_ARG="${GOPROXY_ARG:-https://goproxy.cn,direct}" \
-    --build-arg APK_MIRROR_ARG="${APK_MIRROR_ARG:-mirrors.aliyun.com}" \
-    --build-arg APT_MIRROR="${APT_MIRROR:-mirrors.aliyun.com}" \
+    --build-arg APK_MIRROR_ARG="${APK_MIRROR_ARG:-repo.huaweicloud.com}" \
+    --build-arg APT_MIRROR="${APT_MIRROR:-repo.huaweicloud.com}" \
     --build-arg PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}" \
     --build-arg PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST:-https://npmmirror.com/mirrors/playwright}" \
     --build-arg GITHUB_PROXY="${GITHUB_PROXY:-https://gh-proxy.com/}" \

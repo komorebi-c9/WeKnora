@@ -3,8 +3,9 @@
 # =========================
 FROM python:3.10.18-bookworm AS builder
 
-# 默认使用阿里 Debian 源（此处替换值需含 http:// 前缀）；传空字符串回退官方源。
-ARG APT_MIRROR="http://mirrors.aliyun.com"
+# 默认使用华为云 Debian 源（此处替换值需含 http:// 前缀）；传空字符串回退官方源。
+# 实测本机：华为云 ~7-10MB/s，阿里云 ~0.3MB/s，相差 20~40 倍。
+ARG APT_MIRROR="http://repo.huaweicloud.com"
 # 默认使用阿里 PyPI 镜像；传空字符串回退 pypi.org。
 ARG PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
 # 默认通过 GitHub 加速代理下载 protoc 等发布物；传空字符串回退直连。
@@ -17,7 +18,9 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 WORKDIR /app
 
 # 安装构建依赖
-RUN apt-get update && apt-get install -y \
+# cache mount 缓存 .deb：Dockerfile 改动导致该层重跑时无需重新下载。
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     gcc \
     python3-dev \
     libjpeg-dev \
@@ -72,10 +75,17 @@ RUN if [ -z "$TARGETARCH" ]; then \
 COPY docreader/pyproject.toml docreader/uv.lock ./
 # NOTE: 不要设置 UV_DEFAULT_INDEX / UV_INDEX_URL。uv.lock 里每个包的 source 固定为
 # https://pypi.org/simple，改索引会让 uv 认为锁文件过期，`--locked` 直接失败。
-# 若要换 PyPI 镜像，必须同时重新生成锁文件（uv lock --default-index ...）。
-# 这里只让 `pip install uv` 本身走国内镜像。
-RUN pip install uv --break-system-packages -i "${PIP_INDEX_URL}" && \
-    python -m uv sync --locked --no-dev
+# 因此：`uv export --frozen` 从锁文件导出精确版本清单（沿用锁文件里的版本与哈希），
+# 再用 `uv pip install` 从国内镜像装 —— 锁文件语义不变，下载走 mirrors.aliyun.com。
+# 必须用 uv 而不是 pip：该镜像站对 HTTP/1.1 单连接限速到 ~0.25MB/s，pip 装 700MB
+# 依赖要 40 分钟；uv 走 HTTP/2 且并行下载，实测快 10 倍以上。
+RUN --mount=type=cache,target=/root/.cache/uv \
+    pip install uv --break-system-packages -i "${PIP_INDEX_URL}" && \
+    python -m uv export --frozen --no-dev --no-emit-project \
+        --format requirements-txt -o /tmp/requirements.txt && \
+    python -m venv /app/.venv && \
+    python -m uv pip install --python /app/.venv/bin/python --no-deps \
+        --index-url "${PIP_INDEX_URL}" -r /tmp/requirements.txt
 
 # 复制源代码和生成脚本
 COPY docreader docreader
@@ -87,15 +97,17 @@ RUN chmod +x docreader/scripts/generate_proto.sh && \
 
 # =========================
 # 运行阶段（轻量化）
+# 底座用 slim：venv 解释器路径与 full 版一致（/usr/local/bin/python3.10），
+# 但省掉 buildpack-deps 带进来的 gcc/git/文档等约 800MB。
 # =========================
-FROM python:3.10.18-bookworm AS runner
+FROM python:3.10.18-slim-bookworm AS runner
 
 ARG VERSION_ARG=unknown
 ARG COMMIT_ID_ARG=unknown
 ENV DOCREADER_VERSION=${VERSION_ARG} DOCREADER_COMMIT_ID=${COMMIT_ID_ARG}
 
-# 默认使用阿里 Debian 源；传空字符串回退官方源。
-ARG APT_MIRROR="http://mirrors.aliyun.com"
+# 默认使用华为云 Debian 源；传空字符串回退官方源。
+ARG APT_MIRROR="http://repo.huaweicloud.com"
 # 默认通过 GitHub 加速代理下载 grpc_health_probe；传空字符串回退直连。
 ARG GITHUB_PROXY="https://gh-proxy.com/"
 RUN if [ -n "$APT_MIRROR" ]; then \
@@ -106,7 +118,19 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 WORKDIR /app
 
 # 安装运行时依赖（已移除 OCR/PaddleOCR 相关依赖）
-RUN apt-get update && apt-get install -y \
+# --no-install-recommends：否则 libreoffice 的 recommends 会拖进
+# fonts-noto-extra(~330MB)、mesa/llvm、adwaita 等运行时用不到的包。
+#
+# 字体改为显式安装，且清单是逐项比对过的：与旧镜像（apt recommends 全装）相比，
+# 全部 91426 个码点的字形覆盖与 fontconfig 选字结果完全一致，只少了
+# fonts-noto-extra 提供的 Noto 非 Regular/Bold 字重（Light/Medium/Thin/Black
+# 文档会退化为 Regular/Bold）。
+#   wqy-zenhei/noto-core/ui-core -> 中文与各语种兜底
+#   liberation + liberation2     -> Arial/Times/Courier 度量兼容（LO 实际选 liberation2）
+#   carlito/caladea              -> Calibri/Cambria 度量兼容（Office 文档常用）
+#   freefont/linuxlibertine/gentium/ipafont/tlwg/unifont/opensymbol -> 旧镜像同款兜底链
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo \
     wget \
     gnupg \
@@ -125,6 +149,25 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libreoffice \
     curl \
+    fonts-wqy-zenhei \
+    fonts-noto-core \
+    fonts-noto-mono \
+    fonts-noto-ui-core \
+    fonts-noto-color-emoji \
+    fonts-liberation \
+    fonts-liberation2 \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    fonts-freefont-ttf \
+    fonts-linuxlibertine \
+    fonts-sil-gentium \
+    fonts-sil-gentium-basic \
+    fonts-ipafont-gothic \
+    fonts-tlwg-loma-otf \
+    fonts-unifont \
+    fonts-opensymbol \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 grpc_health_probe
@@ -156,20 +199,45 @@ ENV VIRTUAL_ENV=/app/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
-COPY --from=builder /usr/local/bin /usr/local/bin
+# protoc 只在构建阶段生成 pb 代码时使用，运行时不需要，不再拷贝（约省 44MB）。
 
-# 安装 Playwright 浏览器（网页解析）。默认使用 npmmirror 的 Playwright 镜像；
-# 传空字符串回退官方 CDN，或改为内部制品库地址。
+# 安装 Playwright 浏览器（网页解析）。
+# playwright 自带下载器走 HTTP/1.1 单连接，被镜像站限速到 ~0.25MB/s（95MB 要 7 分钟），
+# 所以这里：先用 curl（HTTP/2）把 webkit 包预取到 cache，再起一个本地 http 服务让
+# playwright 从 127.0.0.1 安装（实测 1.2 秒）。预取失败则自动回退在线安装。
+# 浏览器最终装在 /opt/pw-browsers，下载/解压都在 BuildKit cache 内：
+# 上游层变动导致本层重跑时无需重新下载。
 ARG PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
-ARG PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST=""
-RUN if [ -n "$PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST" ]; then \
-        PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST="$PLAYWRIGHT_WEBKIT_DOWNLOAD_HOST" python -m playwright install webkit; \
+ARG PLAYWRIGHT_PREFETCH_BASE="https://npmmirror.com/mirrors/playwright"
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+RUN --mount=type=cache,target=/root/.pw-cache \
+    --mount=type=cache,target=/root/.pw-zip \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    export PLAYWRIGHT_BROWSERS_PATH=/root/.pw-cache; \
+    url=$(python -m playwright install --dry-run webkit \
+            | sed -n 's/^[[:space:]]*Download fallback 2:[[:space:]]*//p' | head -1); \
+    path=${url#*://*/}; \
+    zip="/root/.pw-zip/$path"; \
+    if [ -n "$path" ] && [ ! -s "$zip" ]; then \
+        mkdir -p "$(dirname "$zip")"; \
+        curl -fsSL --retry 2 -o "$zip.part" "${PLAYWRIGHT_PREFETCH_BASE}/${path}" \
+            && mv "$zip.part" "$zip" || rm -f "$zip.part"; \
+    fi; \
+    if [ -s "$zip" ]; then \
+        (cd /root/.pw-zip && python3 -m http.server 8899 >/dev/null 2>&1 & echo $! > /tmp/pw.pid); \
+        sleep 1; \
+        PLAYWRIGHT_DOWNLOAD_HOST=http://127.0.0.1:8899 python -m playwright install webkit \
+            || python -m playwright install webkit; \
+        kill "$(cat /tmp/pw.pid)" 2>/dev/null; \
     elif [ -n "$PLAYWRIGHT_DOWNLOAD_HOST" ]; then \
         PLAYWRIGHT_DOWNLOAD_HOST="$PLAYWRIGHT_DOWNLOAD_HOST" python -m playwright install webkit; \
     else \
         python -m playwright install webkit; \
-    fi
-RUN python -m playwright install-deps webkit
+    fi; \
+    python -m playwright install-deps webkit; \
+    mkdir -p /opt/pw-browsers; \
+    cp -a /root/.pw-cache/. /opt/pw-browsers/; \
+    chmod -R a+rX /opt/pw-browsers
 
 COPY docreader/pyproject.toml docreader/uv.lock ./
 COPY --from=builder /app/docreader docreader
