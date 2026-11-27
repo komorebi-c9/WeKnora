@@ -41,8 +41,11 @@ const (
 	orionUsernameMaxLen = 100
 )
 
-// LoginWithOrion validates an Orion assertion (NS-TOKEN) and issues a WeKnora
-// session for the identity Orion reports.
+// LoginWithOrion validates an Orion credential and issues a WeKnora session
+// for the identity Orion reports. Both credential shapes Orion accepts are
+// supported: a session assertion (NS-TOKEN) and a License SK (sk-...). The
+// shape is detected from the value itself (see orion.NewCredential), so the
+// caller does not have to say which one it is holding.
 //
 // The user id comes exclusively from the validated identity: the caller cannot
 // supply it, otherwise anyone holding a public number could impersonate another
@@ -50,14 +53,14 @@ const (
 //
 // Every mirrored user owns a personal workspace rather than sharing the one
 // their Orion organisation maps to, so orgId/orgName/isAdmin are never read.
-func (s *userService) LoginWithOrion(ctx context.Context, assertion string) (*types.LoginResponse, error) {
+func (s *userService) LoginWithOrion(ctx context.Context, credential string) (*types.LoginResponse, error) {
 	cfg := s.config
 	if cfg == nil || !cfg.OrionAuth.IsEnabled() {
 		return nil, ErrOrionDisabled
 	}
 
 	client := orion.NewClient(cfg.OrionAuth.BaseURL, cfg.OrionAuth.MePath, cfg.OrionAuth.Timeout())
-	identity, err := client.Me(ctx, assertion)
+	identity, err := client.Me(ctx, orion.NewCredential(credential))
 	if err != nil {
 		if errors.Is(err, orion.ErrUnauthorized) {
 			logger.Warn(ctx, "Orion rejected the credential presented for SSO")
@@ -95,7 +98,7 @@ func (s *userService) LoginWithOrion(ctx context.Context, assertion string) (*ty
 // The provisioning steps are deliberately the same ones Register uses: create a
 // personal workspace, create the account inside it, then make the account the
 // owner. Existing accounts keep their workspace, username, role and platform
-//-admin flag unless Orion promotes them: an Orion admin (is_admin=true) is
+// -admin flag unless Orion promotes them: an Orion admin (is_admin=true) is
 // mirrored as a WeKnora system administrator. The flag is only ever granted,
 // never revoked automatically, so demoting someone in Orion cannot silently
 // strip a WeKnora platform administrator.

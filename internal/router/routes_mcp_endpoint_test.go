@@ -276,7 +276,7 @@ func TestMCPEndpointRoutesDeclareValidAPIKeyPolicies(t *testing.T) {
 	engine := gin.New()
 	v1 := engine.Group("/api/v1")
 	g := &rbacGuards{}
-	RegisterMCPEndpointRoutes(v1, handler.NewMCPEndpointHandler(nil), g)
+	RegisterMCPEndpointRoutes(v1, handler.NewMCPEndpointHandler(nil, nil, nil, nil), g)
 	g.assertAPIKeyPoliciesMatchRoutes(engine)
 
 	routes := map[string]bool{}
@@ -322,7 +322,7 @@ func TestMCPServerRoutesAreMountedAndReported(t *testing.T) {
 	}
 
 	params := RouterParams{
-		MCPEndpointHandler: handler.NewMCPEndpointHandler(nil),
+		MCPEndpointHandler: handler.NewMCPEndpointHandler(nil, nil, nil, nil),
 		MCPEndpointService: &stubMCPEndpointServiceForRoutes{},
 		MCPServer:          srv,
 	}

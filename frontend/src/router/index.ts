@@ -7,7 +7,11 @@ import { useSettingsStore } from '@/stores/settings'
 import { autoSetup, exchangeOrionToken, getAuthConfig } from '@/api/auth'
 import type { AuthConfigResponse } from '@/api/auth'
 import { persistLoginResponse } from '@/utils/authSession'
-import { consumeOrionUrlAssertion, consumedOrionAssertion } from '@/utils/orionAssertion'
+import {
+  ORION_CREDENTIAL_QUERY_KEYS,
+  consumeOrionUrlCredential,
+  consumedOrionCredential,
+} from '@/utils/orionAssertion'
 import type { DeploymentCapabilityKey } from '@/config/deploymentCapabilities'
 import { MessagePlugin } from 'tdesign-vue-next'
 import i18n from '@/i18n'
@@ -306,11 +310,11 @@ async function exchangeOrionOnce(authStore: ReturnType<typeof useAuthStore>): Pr
   // Mark before awaiting so a concurrent guard run cannot start a second call.
   orionExchangeAttempted = true
   try {
-    // The assertion may come from the landing URL (?NS-TOKEN=...), which is the
-    // form the Orion console produces. It was already stripped from the address
-    // bar by consumeOrionUrlAssertion(); forward it as a header so it is not
-    // written to any access log on the way to the API.
-    const response = await exchangeOrionToken(consumedOrionAssertion())
+    // The credential may come from the landing URL: ?NS-TOKEN=... (the form the
+    // Orion console produces) or ?sk=sk-... (a License SK). It was already
+    // stripped from the address bar by consumeOrionUrlCredential(); forward it
+    // as a header so it is not written to any access log on the way to the API.
+    const response = await exchangeOrionToken(consumedOrionCredential())
     if (!response?.success || !response.token) return false
     persistLoginResponse(authStore, response)
     return true
@@ -328,7 +332,7 @@ async function resyncWithOrion(authStore: ReturnType<typeof useAuthStore>): Prom
   const config = await loadAuthEntryConfig()
   if (!config.orion_sso_enabled) return
   try {
-    const response = await exchangeOrionToken(consumedOrionAssertion())
+    const response = await exchangeOrionToken(consumedOrionCredential())
     if (response?.success && response.token) {
       const previousUserId = authStore.user?.id
       if (previousUserId && response.user && response.user.id !== previousUserId) {
@@ -343,11 +347,11 @@ async function resyncWithOrion(authStore: ReturnType<typeof useAuthStore>): Prom
   }
 }
 
-/** Route target with the Orion assertion removed from the query string. */
+/** Route target with the Orion credential (NS-TOKEN or License SK) removed. */
 function targetWithoutOrionAssertion(to: RouteLocationNormalized) {
   const query = { ...to.query }
   let changed = false
-  for (const key of ['NS-TOKEN', 'ns_token', 'nsToken']) {
+  for (const key of ORION_CREDENTIAL_QUERY_KEYS) {
     if (key in query) {
       delete query[key]
       changed = true
@@ -363,9 +367,10 @@ let liteDeepLinkRestoreDone = false
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
-  // 落地地址可能带 ?NS-TOKEN=...（Orion 控制台生成的链接就是这个形态）。
-  // 尽早读一次：不管后面走哪条分支，都先把凭据从地址栏抹掉。
-  consumeOrionUrlAssertion()
+  // 落地地址可能带 ?NS-TOKEN=...（Orion 控制台生成的链接就是这个形态）或
+  // ?sk=sk-...（License SK）。尽早读一次：不管后面走哪条分支，都先把凭据
+  // 从地址栏抹掉。
+  consumeOrionUrlCredential()
   // 已经确认过的导航仍会把 query 写回地址栏，所以这里主动替换成去掉凭据的
   // 目标地址；守卫会为这个干净地址再跑一次（凭据已缓存在内存里）。
   const cleanTarget = targetWithoutOrionAssertion(to)

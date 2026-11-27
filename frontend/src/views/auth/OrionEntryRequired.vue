@@ -32,7 +32,7 @@ import { useI18n } from 'vue-i18n'
 import { exchangeOrionToken } from '@/api/auth'
 import BrandMark from '@/components/BrandMark.vue'
 import { persistLoginResponse } from '@/utils/authSession'
-import { consumeOrionUrlAssertion } from '@/utils/orionAssertion'
+import { consumeOrionUrlCredential } from '@/utils/orionAssertion'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
@@ -51,8 +51,8 @@ async function retry() {
   loading.value = true
   failed.value = false
   try {
-    // 复用本次页面加载期间从地址栏取到并已抹除的凭据（若有）。
-    const response = await exchangeOrionToken(consumeOrionUrlAssertion())
+    // 复用本次页面加载期间从地址栏取到并已抹除的凭据（NS-TOKEN 或 License SK，若有）。
+    const response = await exchangeOrionToken(consumeOrionUrlCredential())
     if (response?.success && response.token) {
       persistLoginResponse(authStore, response)
       router.replace(

@@ -506,7 +506,12 @@ async function saveForm() {
       showDrawer.value = false
       await load()
     } else {
-      const res = await createMcpEndpoint(payload)
+      // The backend cannot rebuild the externally visible base (the gateway
+      // strips the sub-path), so hand it the same base the snippets display.
+      const res = await createMcpEndpoint({
+        ...payload,
+        public_base_url: apiBaseUrlDisplay.value.replace(/\/api\/v1$/, ''),
+      })
       MessagePlugin.success(t('integrations.mcpserver.created'))
       await load()
       // Stay in the drawer and move to the connection step so the one-time

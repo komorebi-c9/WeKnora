@@ -1971,8 +1971,10 @@ watch(() => props.visible, async (newVal) => {
       currentSection.value = uiStore.kbEditorInitialSection
     }
     
-    // 加载模型列表与空间默认存储引擎（创建 KB 时即使用，不依赖是否打开「存储引擎」Tab）
-    await Promise.all([loadAllModels(), loadTenantDefaultStorageProvider()])
+    // 加载模型列表与空间默认存储引擎（创建 KB 时即使用，不依赖是否打开「存储引擎」Tab）。
+    // 强制刷新：Orion 同步可能在页面加载后改写模型行，缓存列表会让 KB 当前
+    // 嵌入模型看起来“不存在”，从而放行一次后端必然拒绝的修改。
+    await Promise.all([loadAllModels(true), loadTenantDefaultStorageProvider()])
 
     if (generation !== kbEditorLoadGeneration || !props.visible) return
     

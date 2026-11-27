@@ -38,7 +38,7 @@ func setupListUsersRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	}
 
 	repo := repository.NewUserRepository(db)
-	svc := service.NewUserService(nil, repo, nil, nil, nil, nil)
+	svc := service.NewUserService(nil, repo, nil, nil, nil, nil, nil)
 	h := &SystemHandler{userSvc: svc}
 
 	gin.SetMode(gin.TestMode)

@@ -45,15 +45,19 @@
             model-type="Embedding"
             :selected-model-id="config.embeddingModelId"
             :all-models="allModels"
-            :disabled="ragEnabled && hasFiles"
+            :disabled="embeddingLocked"
             :clearable="ragEnabled === false && wikiEnabled"
             @update:selected-model-id="handleEmbeddingChange"
             @add-model="handleAddModel('embedding')"
             :placeholder="$t('knowledgeEditor.models.embeddingPlaceholder')"
           />
-          <p v-if="ragEnabled && hasFiles" class="locked-hint">
+          <p v-if="embeddingLocked" class="locked-hint">
             <t-icon name="lock-on" class="locked-hint-icon" />
             <span>{{ $t('knowledgeEditor.models.embeddingLocked') }}</span>
+          </p>
+          <p v-else-if="embeddingModelUnresolved && ragEnabled" class="locked-hint locked-hint--warning">
+            <t-icon name="error-circle" class="locked-hint-icon" />
+            <span>{{ $t('knowledgeEditor.models.embeddingMissing') }}</span>
           </p>
         </div>
       </div>
@@ -82,10 +86,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import ModelSelector from '@/components/ModelSelector.vue'
 import { useI18n } from 'vue-i18n'
+import { modelSupportsType } from '@/utils/modelDefaults'
 
 interface ModelConfig {
   llmModelId?: string
@@ -113,6 +118,28 @@ const { t } = useI18n()
 
 const llmSelectorRef = ref<InstanceType<typeof ModelSelector>>()
 const embeddingSelectorRef = ref<InstanceType<typeof ModelSelector>>()
+
+// A model row can disappear after a catalogue sync or key rotation. The
+// knowledge base is already unusable in that state, so the selector must stay
+// editable even when files exist: the backend allows the switch and rebuilds
+// the index. Anything short of a definitive "not in a fresh model list" keeps
+// the conservative lock, matching the backend's GetModelByID rules (active
+// embedding models only).
+const embeddingModelUnresolved = computed(() => {
+  const id = props.config.embeddingModelId?.trim()
+  if (!id || !props.allModels?.length) {
+    return false
+  }
+  return !props.allModels.some(model =>
+    model.id === id
+    && modelSupportsType(model, 'Embedding')
+    && (!model.status || model.status === 'active'),
+  )
+})
+
+const embeddingLocked = computed(() =>
+  Boolean(props.ragEnabled && props.hasFiles && !embeddingModelUnresolved.value),
+)
 
 const handleLLMChange = (modelId: string) => {
   emit('update:config', {
@@ -242,6 +269,14 @@ const handleAddModel = (subSection: string) => {
     margin-top: 2px;
     font-size: var(--app-text-base);
     color: var(--td-text-color-placeholder);
+  }
+}
+
+.locked-hint--warning {
+  color: var(--td-warning-color);
+
+  .locked-hint-icon {
+    color: var(--td-warning-color);
   }
 }
 </style>

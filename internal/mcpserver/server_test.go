@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -198,4 +199,44 @@ func TestRateLimitPerEndpoint(t *testing.T) {
 func TestTouchLastUsedToleratesMissingRepository(_ *testing.T) {
 	srv := &Server{}
 	srv.touchLastUsed(context.Background(), "ep-1") // must not panic
+}
+
+// TestTransportAcceptsNonLoopbackHostHeader pins the proxy topology used by the
+// all-in-one image and the Orion gateway: the connection to the app terminates
+// on 127.0.0.1 while the public Host header is preserved. mcp-go's DNS-rebinding
+// guard rejects exactly that combination with 403 "Forbidden: invalid Host
+// header", which made every remote client fail while local dev (Vite rewrites
+// Host via changeOrigin) worked, so the transport must run with the guard off.
+func TestTransportAcceptsNonLoopbackHostHeader(t *testing.T) {
+	ep := &types.MCPEndpoint{
+		ID: "ep-1", TenantID: 1, Enabled: true, RateLimitPerMinute: 100,
+		Tools: types.StringArray{types.MCPEndpointToolListKnowledgeBases},
+	}
+	r := newTestEngine(t, ep)
+
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "probe", "version": "1"},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/mcp/ep-1", bytes.NewReader(body))
+	req.Host = "192.168.3.139:15173"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	local := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}
+	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, net.Addr(local)))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"serverInfo"`) {
+		t.Fatalf("unexpected initialize response: %s", w.Body.String())
+	}
 }

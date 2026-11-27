@@ -1429,6 +1429,7 @@ export default {
       embeddingDesc: 'Embedding model used for text vectorization',
       embeddingPlaceholder: 'Select an embedding model',
       embeddingLocked: 'Knowledge base already has files. Embedding model cannot be modified',
+      embeddingMissing: 'The current embedding model no longer exists. Select another one; saving rebuilds the index.',
       embeddingOptional: '(Optional)',
       embeddingWikiOptionalDesc: 'Optional. When set, it powers similarity matching for Wiki directory classification so new pages reuse existing folders better; otherwise the full directory tree is used.'
     },

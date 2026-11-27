@@ -75,6 +75,12 @@ type KnowledgeBaseService interface {
 		id string, name string, description string, config *types.KnowledgeBaseConfig, vlmConfig *types.VLMConfig,
 	) (*types.KnowledgeBase, error)
 
+	// RebuildEmbeddingIndex re-parses every document of the knowledge base so
+	// its vectors are regenerated with the embedding model now configured. It
+	// is the recovery path after switching away from a model that no longer
+	// resolves.
+	RebuildEmbeddingIndex(ctx context.Context, id string) error
+
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
 	//   - ctx: Context information

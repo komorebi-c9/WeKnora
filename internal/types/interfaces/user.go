@@ -31,12 +31,14 @@ type UserService interface {
 		ctx context.Context, code, redirectURI string,
 		provisioning types.TenantProvisioningMode, codeVerifier string,
 	) (*types.OIDCCallbackResponse, error)
-	// LoginWithOrion validates an Orion assertion (NS-TOKEN) and issues a
-	// local session in the shape of Login. Exactly one upstream call is made.
+	// LoginWithOrion validates an Orion credential and issues a local session
+	// in the shape of Login. Both shapes Orion accepts are supported: a
+	// session assertion (NS-TOKEN) and a License SK (sk-...); the shape is
+	// detected from the value itself. Exactly one upstream call is made.
 	// The user id and org id are taken exclusively from the validated
 	// identity: callers must never supply them, otherwise a public number
 	// would be enough to impersonate another account.
-	LoginWithOrion(ctx context.Context, assertion string) (*types.LoginResponse, error)
+	LoginWithOrion(ctx context.Context, credential string) (*types.LoginResponse, error)
 	// GetUserByID gets a user by ID
 	GetUserByID(ctx context.Context, id string) (*types.User, error)
 	// GetUsersByIDs batch-fetches users by id, returning a map keyed by

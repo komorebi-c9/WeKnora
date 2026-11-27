@@ -410,7 +410,8 @@ type OIDCAuthConfig struct {
 //
 // Only one upstream call is ever made (GET me_path), so there is no token
 // endpoint, secret or scope here: WeKnora forwards the caller's own
-// NS-TOKEN and lets Orion decide whether it is valid.
+// credential — an NS-TOKEN session assertion or a License SK (sk-...) — and
+// lets Orion decide whether it is valid.
 type OrionAuthConfig struct {
 	// Enable turns Orion into the identity provider. While false the
 	// deployment behaves exactly as before (local login/registration).
@@ -467,10 +468,6 @@ type OrionModelConfig struct {
 	SyncIntervalSeconds int `yaml:"sync_interval_seconds" json:"sync_interval_seconds"`
 	// TimeoutSeconds bounds one Orion round trip; default 10.
 	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
-	// SyncVision additionally materialises a VLLM row for every chat model,
-	// because Orion's catalogue has no dedicated vision type while WeKnora
-	// treats vision as its own selectable model type. Default true.
-	SyncVision bool `yaml:"sync_vision" json:"sync_vision"`
 }
 
 // IsEnabled reports whether Orion owns the model catalogue.
@@ -1011,9 +1008,7 @@ func applyOrionAuthEnvOverrides(cfg *Config) {
 // Orion gateway the identity side uses, configured once via ORION_BASE_URL.
 func applyOrionModelEnvOverrides(cfg *Config) {
 	if cfg.OrionModel == nil {
-		// Vision rows default on: Orion has no dedicated vision type, so without
-		// them knowledge-base image understanding has nothing to select.
-		cfg.OrionModel = &OrionModelConfig{SyncVision: true}
+		cfg.OrionModel = &OrionModelConfig{}
 	}
 
 	if value := strings.TrimSpace(os.Getenv("ORION_MODEL_ENABLE")); value != "" {
@@ -1028,9 +1023,6 @@ func applyOrionModelEnvOverrides(cfg *Config) {
 		if seconds, err := strconv.Atoi(value); err == nil {
 			cfg.OrionModel.TimeoutSeconds = seconds
 		}
-	}
-	if value := strings.TrimSpace(os.Getenv("ORION_MODEL_SYNC_VISION")); value != "" {
-		cfg.OrionModel.SyncVision = strings.EqualFold(value, "true")
 	}
 
 	// A sync interval below the floor is almost certainly a unit mistake

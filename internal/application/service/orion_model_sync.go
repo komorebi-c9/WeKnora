@@ -437,8 +437,13 @@ func (s *OrionModelSync) reconcile(
 	ctx context.Context, tenantID uint64, apiKey string,
 	entries []orion.ModelCatalogEntry, probeCache map[string]int,
 ) (total, created, updated, deleted int, err error) {
-	desired := s.desiredModels(ctx, tenantID, apiKey, entries, probeCache)
-	if len(desired) == 0 {
+	available := 0
+	for _, entry := range entries {
+		if entry.Available {
+			available++
+		}
+	}
+	if available == 0 {
 		// Every listed model is unavailable right now. Keep the previous rows:
 		// availability is transient, existence is not.
 		return 0, 0, 0, 0, ErrOrionCatalogEmpty
@@ -448,6 +453,14 @@ func (s *OrionModelSync) reconcile(
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
+
+	desired := s.desiredModels(ctx, tenantID, apiKey, entries, probeCache, existing)
+	if len(desired) == 0 {
+		// Every listed model is unavailable right now. Keep the previous rows:
+		// availability is transient, existence is not.
+		return 0, 0, 0, 0, ErrOrionCatalogEmpty
+	}
+
 	replaceAll := false
 	for _, row := range existing {
 		if row != nil && strings.TrimSpace(row.Parameters.APIKey) != apiKey {
@@ -506,13 +519,29 @@ func (s *OrionModelSync) Status(ctx context.Context, tenantID uint64) OrionSyncS
 }
 
 // desiredModels maps the catalogue onto the rows this workspace should have.
+// existing lets a transient upstream failure keep the row it already published:
+// pruning it would dangle every knowledge base that pins its id.
 func (s *OrionModelSync) desiredModels(
 	ctx context.Context, tenantID uint64, apiKey string,
 	entries []orion.ModelCatalogEntry, probeCache map[string]int,
+	existing []*types.Model,
 ) []*types.Model {
+	previous := make(map[string]*types.Model, len(existing))
+	for _, row := range existing {
+		if row != nil {
+			previous[row.ID] = row
+		}
+	}
 	out := make([]*types.Model, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.Available {
+			if row := previous[OrionModelID(tenantID, catalogTypeTag(entry.Type), entry.Name)]; row != nil {
+				logger.Debugf(ctx,
+					"[orion-model] keeping unavailable model %s (workspace %d)",
+					entry.Name, tenantID)
+				out = append(out, row)
+				continue
+			}
 			logger.Debugf(ctx,
 				"[orion-model] skipping unavailable model %s (workspace %d)", entry.Name, tenantID)
 			continue
@@ -523,7 +552,7 @@ func (s *OrionModelSync) desiredModels(
 			if model == nil {
 				continue
 			}
-			dimension := s.embeddingDimension(ctx, apiKey, entry.Name, probeCache)
+			dimension := s.embeddingDimension(ctx, apiKey, entry.Name, probeCache, previous[model.ID])
 			if dimension <= 0 {
 				logger.Warnf(ctx,
 					"[orion-model] embedding model %s skipped: dimension unknown (workspace %d)",
@@ -543,20 +572,28 @@ func (s *OrionModelSync) desiredModels(
 				out = append(out, model)
 			}
 		case orion.CatalogTypeChat:
-			if model := s.newRow(tenantID, apiKey, entry, types.ModelTypeKnowledgeQA, "chat", ""); model != nil {
-				out = append(out, model)
+			model := s.newRow(tenantID, apiKey, entry, types.ModelTypeKnowledgeQA, "chat", "")
+			if model == nil {
+				continue
 			}
-			// Orion has no dedicated vision type; vision is a WeKnora model
-			// type served by the same /chat/completions endpoint.
-			if s.cfg.SyncVision {
-				if model := s.newRow(tenantID, apiKey, entry, types.ModelTypeVLLM, "vlm", " (Vision)"); model != nil {
-					out = append(out, model)
-				}
+			// Architecture metadata is the only vision signal: the chat row
+			// keeps exactly the capability Orion declared. SupportsType
+			// already lets such a row serve as the workspace's VLM, so no
+			// extra row is derived.
+			if entry.VisionKnown {
+				model.Parameters.SupportsVision = entry.SupportsVision
 			}
-		case "vlm":
+			out = append(out, model)
+		case orion.CatalogTypeVLM:
+			// Orion's vision models ("vlm"/"video") map onto WeKnora's VLLM
+			// type one-to-one.
 			if model := s.newRow(tenantID, apiKey, entry, types.ModelTypeVLLM, "vlm", ""); model != nil {
+				model.Parameters.SupportsVision = true
 				out = append(out, model)
 			}
+		case orion.CatalogTypeUnsupported:
+			logger.Debugf(ctx,
+				"[orion-model] skipping model %s: declared model_type is not supported", entry.Name)
 		default:
 			logger.Debugf(ctx,
 				"[orion-model] skipping model %s with unsupported type %q", entry.Name, entry.Type)
@@ -605,10 +642,18 @@ func (s *OrionModelSync) newRow(
 
 // embeddingDimension resolves the vector width without guessing:
 // existing row → WeKnora's built-in catalogue → one live probe (memoised per
-// sweep through probeCache).
+// sweep through probeCache). A published row wins because its dimension is
+// already baked into stored vectors; a transient probe failure must not change
+// (or drop) it.
 func (s *OrionModelSync) embeddingDimension(
 	ctx context.Context, apiKey, modelName string, probeCache map[string]int,
+	previous *types.Model,
 ) int {
+	if previous != nil {
+		if dimension := previous.Parameters.EmbeddingParameters.Dimension; dimension > 0 {
+			return dimension
+		}
+	}
 	if dimension, ok := catalogEmbeddingDimension(modelName); ok {
 		return dimension
 	}
@@ -720,6 +765,26 @@ func (s *OrionModelSync) recordFailure(tenantID uint64, err error) {
 // OrionModelID derives a stable, URL-safe primary key. models.id is a global
 // varchar(64) primary key, so the workspace and model type are part of the id
 // and an over-long name is truncated with a hash suffix.
+// catalogTypeTag returns the id tag a catalogue bucket uses in OrionModelID, so
+// a row published by an earlier sweep can be located without rebuilding it.
+// Unsupported buckets report "".
+func catalogTypeTag(catalogType string) string {
+	switch catalogType {
+	case orion.CatalogTypeEmbedding:
+		return "emb"
+	case orion.CatalogTypeRerank:
+		return "rer"
+	case orion.CatalogTypeASR:
+		return "asr"
+	case orion.CatalogTypeChat:
+		return "chat"
+	case orion.CatalogTypeVLM:
+		return "vlm"
+	default:
+		return ""
+	}
+}
+
 func OrionModelID(tenantID uint64, typeTag, modelName string) string {
 	base := fmt.Sprintf("orion-%d-%s-%s", tenantID, typeTag, sanitizeModelIDPart(modelName))
 	if len(base) <= types.ModelIDMaxLen {

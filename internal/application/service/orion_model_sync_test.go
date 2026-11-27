@@ -255,7 +255,6 @@ func testCfg() *config.OrionModelConfig {
 		Enable:              true,
 		SyncIntervalSeconds: 300,
 		TimeoutSeconds:      10,
-		SyncVision:          true,
 	}
 }
 
@@ -268,6 +267,7 @@ func testEntries() []orion.ModelCatalogEntry {
 		{Name: "bge-m3-Q8_0", DisplayName: "BGE M3", Type: orion.CatalogTypeEmbedding, Available: true},
 		{Name: "bge-reranker-v2-m3-Q8_0", Type: orion.CatalogTypeRerank, Available: true},
 		{Name: "local_Qwen3.6-35B-A3B-MTP", Type: orion.CatalogTypeChat, ContextWindow: 131072, Available: true},
+		{Name: "cube-vlm", Type: orion.CatalogTypeVLM, ContextWindow: 128000, Available: true},
 		{Name: "offline-model", Type: orion.CatalogTypeChat, Available: false},
 	}
 }
@@ -296,7 +296,7 @@ func TestSyncTenantCreatesTypedRows(t *testing.T) {
 
 	result, err := sync.SyncTenant(context.Background(), testTenantID)
 	require.NoError(t, err)
-	assert.Equal(t, 4, result.Total, "chat expands into chat + vision, offline model skipped")
+	assert.Equal(t, 4, result.Total, "one row per catalogue entry; offline model skipped")
 	assert.Equal(t, 4, result.Created)
 	assert.Equal(t, 0, result.Deleted)
 
@@ -328,8 +328,9 @@ func TestSyncTenantCreatesTypedRows(t *testing.T) {
 
 	vision := byType[types.ModelTypeVLLM]
 	require.NotNil(t, vision)
-	assert.Contains(t, vision.DisplayName, "Vision")
-	assert.Equal(t, "local_Qwen3.6-35B-A3B-MTP", vision.Name)
+	assert.Equal(t, "cube-vlm", vision.Name)
+	assert.Equal(t, "cube-vlm", vision.DisplayName, "no derived display suffix")
+	assert.True(t, vision.Parameters.SupportsVision)
 
 	assert.Contains(t, catalog.keys, "sk-global", "the global credential must be the one used")
 }
@@ -359,16 +360,17 @@ func TestSyncTenantUpdatesAndPrunes(t *testing.T) {
 	_, err := sync.SyncTenant(context.Background(), testTenantID)
 	require.NoError(t, err)
 
-	// Orion drops the reranker and trims the chat model's context window.
+	// Orion drops the reranker and the vision model, and trims the chat
+	// model's context window.
 	catalog.entries = []orion.ModelCatalogEntry{
 		{Name: "bge-m3-Q8_0", Type: orion.CatalogTypeEmbedding, Available: true},
 		{Name: "local_Qwen3.6-35B-A3B-MTP", Type: orion.CatalogTypeChat, ContextWindow: 32768, Available: true},
 	}
 	result, err := sync.SyncTenant(context.Background(), testTenantID)
 	require.NoError(t, err)
-	assert.Equal(t, 3, result.Total)
-	assert.Equal(t, 1, result.Deleted, "the reranker row must be soft-deleted")
-	assert.GreaterOrEqual(t, result.Updated, 2, "chat context window change propagates to chat + vision rows")
+	assert.Equal(t, 2, result.Total)
+	assert.Equal(t, 2, result.Deleted, "the reranker and vision rows must be soft-deleted")
+	assert.GreaterOrEqual(t, result.Updated, 1, "chat context window change propagates")
 
 	rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, testTenantID)
 	require.NoError(t, err)
@@ -607,6 +609,93 @@ func TestPurgeAllClearsEveryWorkspaceAndKeepsForeignRows(t *testing.T) {
 	assert.Equal(t, 0, deleted)
 }
 
+// TestSyncTenantKeepsPublishedRowsOnTransientFailures pins the difference
+// between "temporarily unavailable" and "gone": a failed dimension probe or an
+// unavailable entry must keep the row an earlier sweep published, otherwise
+// every knowledge base pinning that id is left dangling.
+func TestSyncTenantKeepsPublishedRowsOnTransientFailures(t *testing.T) {
+	embedID := OrionModelID(testTenantID, "emb", "cube-embed")
+	chatID := OrionModelID(testTenantID, "chat", "cube-char")
+	repo := newFakeModelRepo(
+		&types.Model{
+			ID: embedID, TenantID: testTenantID, Name: "cube-embed",
+			Type: types.ModelTypeEmbedding, Source: types.ModelSourceOrion,
+			ManagedBy: OrionManagedBy, Status: types.ModelStatusActive,
+			Parameters: types.ModelParameters{
+				APIKey:              "sk-global",
+				EmbeddingParameters: types.EmbeddingParameters{Dimension: 1024},
+			},
+		},
+		&types.Model{
+			ID: chatID, TenantID: testTenantID, Name: "cube-char",
+			Type: types.ModelTypeKnowledgeQA, Source: types.ModelSourceOrion,
+			ManagedBy: OrionManagedBy, Status: types.ModelStatusActive,
+			Parameters: types.ModelParameters{APIKey: "sk-global"},
+		},
+	)
+	catalog := &stubOrionCatalog{
+		entries: []orion.ModelCatalogEntry{
+			{Name: "cube-embed", Type: orion.CatalogTypeEmbedding, Available: true},
+			{Name: "cube-char", Type: orion.CatalogTypeChat, Available: false},
+		},
+		dimension: 0, // every probe fails this sweep
+	}
+	store := &fakeCredentialStore{key: "sk-global"}
+	sync := newTestSync(catalog, repo, store, defaultTenants(testTenantID))
+
+	result, err := sync.SyncTenant(context.Background(), testTenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Deleted)
+
+	rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, testTenantID)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	byID := make(map[string]*types.Model, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	require.Contains(t, byID, embedID, "the probe failure must not drop the embedding row")
+	assert.Equal(t, 1024, byID[embedID].Parameters.EmbeddingParameters.Dimension)
+	require.Contains(t, byID, chatID, "an unavailable entry must keep its published row")
+}
+
+// TestSyncTenantMapsEveryDeclaredType locks the Orion -> WeKnora table at the
+// row-creation layer: chat->KnowledgeQA, embedding->Embedding, rerank->Rerank,
+// asr->ASR, video->VLLM.
+func TestSyncTenantMapsEveryDeclaredType(t *testing.T) {
+	repo := newFakeModelRepo()
+	catalog := &stubOrionCatalog{
+		entries: []orion.ModelCatalogEntry{
+			{Name: "cube-char", Type: orion.CatalogTypeChat, Available: true},
+			{Name: "cube-embed", Type: orion.CatalogTypeEmbedding, Available: true},
+			{Name: "cube-rerank", Type: orion.CatalogTypeRerank, Available: true},
+			{Name: "cube-asr", Type: orion.CatalogTypeASR, Available: true},
+			{Name: "cube-vllm", Type: orion.CatalogTypeVLM, Available: true},
+		},
+		dimension: 1024,
+	}
+	store := &fakeCredentialStore{key: "sk-global"}
+	sync := newTestSync(catalog, repo, store, defaultTenants(testTenantID))
+
+	_, err := sync.SyncTenant(context.Background(), testTenantID)
+	require.NoError(t, err)
+
+	rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, testTenantID)
+	require.NoError(t, err)
+	require.Len(t, rows, 5)
+
+	want := map[string]types.ModelType{
+		"cube-char":   types.ModelTypeKnowledgeQA,
+		"cube-embed":  types.ModelTypeEmbedding,
+		"cube-rerank": types.ModelTypeRerank,
+		"cube-asr":    types.ModelTypeASR,
+		"cube-vllm":   types.ModelTypeVLLM,
+	}
+	for _, row := range rows {
+		assert.Equalf(t, want[row.Name], row.Type, "%s type", row.Name)
+	}
+}
+
 func TestSyncTenantDisabled(t *testing.T) {
 	cfg := testCfg()
 	cfg.Enable = false
@@ -614,4 +703,76 @@ func TestSyncTenantDisabled(t *testing.T) {
 		cfg, testOrionBaseURL, &stubOrionCatalog{}, newFakeModelRepo(), &fakeCredentialStore{}, defaultTenants(testTenantID))
 	_, err := sync.SyncTenant(context.Background(), testTenantID)
 	assert.ErrorIs(t, err, ErrOrionModelDisabled)
+}
+
+// TestSyncTenantUsesDeclaredVisionOnChatRow pins the strict mapping: a chat
+// entry yields exactly one chat row whose vision flag mirrors the declared
+// architecture, and no VLLM twin is derived from it.
+func TestSyncTenantUsesDeclaredVisionOnChatRow(t *testing.T) {
+	repo := newFakeModelRepo()
+	catalog := &stubOrionCatalog{
+		entries: []orion.ModelCatalogEntry{
+			{Name: "cube-char", Type: orion.CatalogTypeChat, ContextWindow: 200000,
+				Available: true, SupportsVision: true, VisionKnown: true},
+			{Name: "cube-text", Type: orion.CatalogTypeChat, Available: true,
+				SupportsVision: false, VisionKnown: true},
+			{Name: "legacy-chat", Type: orion.CatalogTypeChat, Available: true},
+		},
+	}
+	store := &fakeCredentialStore{key: "sk-global"}
+	sync := newTestSync(catalog, repo, store, defaultTenants(testTenantID))
+
+	result, err := sync.SyncTenant(context.Background(), testTenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.Total, "one row per chat entry, no derived vision row")
+
+	rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, testTenantID)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+
+	byName := make(map[string]*types.Model, len(rows))
+	for _, row := range rows {
+		require.Equal(t, types.ModelTypeKnowledgeQA, row.Type)
+		byName[row.Name] = row
+	}
+	assert.True(t, byName["cube-char"].Parameters.SupportsVision,
+		"the declared image modality belongs on the chat row")
+	assert.False(t, byName["cube-text"].Parameters.SupportsVision)
+	assert.False(t, byName["legacy-chat"].Parameters.SupportsVision,
+		"a missing declaration is unknown, not vision")
+}
+
+// TestSyncTenantMapsVideoToVisionModel pins Orion's "video" declaration onto
+// WeKnora's VLLM type: it is a real vision model, not a chat model and not a
+// fabricated twin. Declared-but-unknown types are skipped instead of guessed.
+func TestSyncTenantMapsVideoToVisionModel(t *testing.T) {
+	repo := newFakeModelRepo()
+	catalog := &stubOrionCatalog{
+		entries: []orion.ModelCatalogEntry{
+			{Name: "cube-vllm", Type: orion.CatalogTypeVLM, Available: true, VisionKnown: true},
+			{Name: "cube-char", Type: orion.CatalogTypeChat, Available: true,
+				SupportsVision: true, VisionKnown: true},
+			{Name: "mystery-tts", Type: orion.CatalogTypeUnsupported, Available: true},
+		},
+	}
+	store := &fakeCredentialStore{key: "sk-global"}
+	sync := newTestSync(catalog, repo, store, defaultTenants(testTenantID))
+
+	result, err := sync.SyncTenant(context.Background(), testTenantID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.Total)
+
+	rows, err := repo.ListByManagedBy(context.Background(), OrionManagedBy, testTenantID)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	byName := make(map[string]*types.Model, len(rows))
+	for _, row := range rows {
+		byName[row.Name] = row
+	}
+	require.Contains(t, byName, "cube-vllm")
+	assert.Equal(t, types.ModelTypeVLLM, byName["cube-vllm"].Type)
+	assert.True(t, byName["cube-vllm"].Parameters.SupportsVision)
+	assert.Equal(t, types.ModelTypeKnowledgeQA, byName["cube-char"].Type)
+	assert.NotContains(t, byName, "mystery-tts")
 }

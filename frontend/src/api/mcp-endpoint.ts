@@ -42,6 +42,8 @@ export interface McpEndpointPayload {
   tools?: string[]
   default_agent_id?: string
   rate_limit_per_minute?: number
+  /** Externally visible base (origin + sub-path) used for the Orion push. */
+  public_base_url?: string
 }
 
 interface Envelope<T> {

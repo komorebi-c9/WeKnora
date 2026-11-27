@@ -23,6 +23,8 @@ func (s *stubKnowledgeBaseService) CreateKnowledgeBase(context.Context, *types.K
 	return nil, nil
 }
 
+func (s *stubKnowledgeBaseService) RebuildEmbeddingIndex(context.Context, string) error { return nil }
+
 func (s *stubKnowledgeBaseService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
 	return s.kb, nil
 }

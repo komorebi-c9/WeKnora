@@ -16,15 +16,21 @@ import (
 // means the endpoint is not what we think it is.
 const maxCatalogResponseBytes = 8 << 20
 
-// Canonical model types. The gateway catalogue (GET /v1/models) carries no
-// type field, so every entry is bucketed by InferModelType; these strings match
-// Orion's own ModelType values (snake_case), which keeps the buckets stable if
-// richer metadata ever becomes available again.
+// Canonical model types. The gateway catalogue (GET /v1/models) declares
+// model_type explicitly; recognised values are mapped one-to-one onto these
+// buckets (Orion's "video" is its vision model, so it maps onto CatalogTypeVLM).
+// Gateways predating the field fall back to InferModelType, the name-based
+// heuristic Orion itself uses on probe import; a declared value this build does
+// not know is reported as CatalogTypeUnsupported rather than guessed.
 const (
 	CatalogTypeChat      = "chat"
 	CatalogTypeEmbedding = "embedding"
 	CatalogTypeRerank    = "rerank"
 	CatalogTypeASR       = "asr"
+	CatalogTypeVLM       = "vlm"
+	// CatalogTypeUnsupported marks a declared model_type this build cannot
+	// serve. The synchroniser skips it instead of guessing a bucket.
+	CatalogTypeUnsupported = "unsupported"
 )
 
 // ModelCatalogEntry is one model Orion has configured for a user.
@@ -36,15 +42,25 @@ type ModelCatalogEntry struct {
 	// DisplayName is the operator-facing label from Orion; always empty for
 	// the gateway catalogue, which only exposes the model id.
 	DisplayName string
-	// Type is one of catalogType* above, inferred from the model name.
+	// Type is one of CatalogType* above: the declared model_type mapped onto a
+	// bucket, CatalogTypeUnsupported when the declaration is unknown, or the
+	// name heuristic when the gateway omits the field entirely.
 	Type string
-	// ContextWindow / MaxTokens are model-declared limits; 0 means unknown,
-	// which is always the case for the gateway catalogue.
+	// ContextWindow / MaxTokens are model-declared limits; 0 means unknown.
+	// The gateway reports them as context_length and
+	// top_provider.max_completion_tokens.
 	ContextWindow int
 	MaxTokens     int
-	// Available is true for every listed model: the gateway only advertises
-	// what it can serve, and deeper readiness is not exposed.
+	// Available mirrors orion.availability; an absent value counts as
+	// available because listing a model is itself an intent to serve it.
 	Available bool
+	// SupportsVision reports whether architecture.input_modalities declares
+	// image input. It is only meaningful when VisionKnown is true.
+	SupportsVision bool
+	// VisionKnown reports whether the catalogue declared input modalities.
+	// Older gateways omit architecture entirely; callers must not read
+	// SupportsVision=false as "text-only" in that case.
+	VisionKnown bool
 }
 
 // ModelCatalog reads the model catalogue Orion has configured for one
@@ -89,20 +105,35 @@ func NewModelCatalog(baseURL string, timeout time.Duration) *HTTPModelCatalog {
 	}
 }
 
-// gatewayCatalog is GET /v1/models: the OpenAI {object,data} shape. Orion also
-// adds owned_by and a per-model providers[] list; the synchroniser does not
-// read them because every row is served through the same gateway credential.
+// gatewayCatalog is GET /v1/models: the OpenAI {object,data} shape plus Orion's
+// own extras. Only the fields the synchroniser actually consumes are decoded;
+// owned_by and providers[] are ignored because every row is served through the
+// same gateway credential.
 type gatewayCatalog struct {
 	Object string `json:"object"`
 	Data   []struct {
-		ID string `json:"id"`
+		ID            string `json:"id"`
+		ModelType     string `json:"model_type"`
+		ContextLength int    `json:"context_length"`
+		Architecture  struct {
+			Modality         string   `json:"modality"`
+			InputModalities  []string `json:"input_modalities"`
+			OutputModalities []string `json:"output_modalities"`
+		} `json:"architecture"`
+		TopProvider struct {
+			ContextLength       int `json:"context_length"`
+			MaxCompletionTokens int `json:"max_completion_tokens"`
+		} `json:"top_provider"`
+		Orion struct {
+			Availability string `json:"availability"`
+		} `json:"orion"`
 	} `json:"data"`
 }
 
 // List reads the OpenAI-compatible gateway catalogue. Each listed id becomes
-// one row, with the type inferred from the name: the gateway face carries no
-// type or limit metadata, and routability can only be discovered by attempting
-// an inference call, so listed models are assumed available.
+// one row, typed by model_type (name heuristic when absent) and carrying the
+// declared context window, output limit and availability. Reachability is not
+// probed: the gateway only advertises what it means to serve.
 func (c *HTTPModelCatalog) List(ctx context.Context, apiKey string) ([]ModelCatalogEntry, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
@@ -128,18 +159,105 @@ func (c *HTTPModelCatalog) List(ctx context.Context, apiKey string) ([]ModelCata
 			continue
 		}
 		seen[name] = struct{}{}
+		// top_provider repeats the model-level limits for the selected
+		// endpoint; fall back to it only when the top-level value is missing.
+		contextWindow := row.ContextLength
+		if contextWindow <= 0 {
+			contextWindow = row.TopProvider.ContextLength
+		}
+		supportsVision, visionKnown := catalogVision(
+			row.Architecture.Modality, row.Architecture.InputModalities)
 		entries = append(entries, ModelCatalogEntry{
-			Name:      name,
-			Type:      InferModelType(name),
-			Available: true,
+			Name:           name,
+			Type:           CatalogModelType(name, row.ModelType),
+			ContextWindow:  contextWindow,
+			MaxTokens:      row.TopProvider.MaxCompletionTokens,
+			Available:      catalogAvailability(row.Orion.Availability),
+			SupportsVision: supportsVision,
+			VisionKnown:    visionKnown,
 		})
 	}
 	return entries, nil
 }
 
+// CatalogModelType resolves the bucket for one entry. A declared model_type is
+// authoritative: recognised values map one-to-one, and an unrecognised value is
+// reported as unsupported instead of being guessed from the name. The name
+// heuristic only runs for gateways that predate the field.
+func CatalogModelType(modelName, declared string) string {
+	if strings.TrimSpace(declared) != "" {
+		if catalogType, ok := normalizeCatalogType(declared); ok {
+			return catalogType
+		}
+		return CatalogTypeUnsupported
+	}
+	return InferModelType(modelName)
+}
+
+// normalizeCatalogType maps a wire model_type onto a CatalogType*. Matching is
+// case-insensitive and ignores separators, so "Text-Embedding" and
+// "text_embedding" both resolve. Orion reports its vision models as "video", so
+// that declaration maps onto CatalogTypeVLM (WeKnora's vision type). Unknown
+// values report ok=false; the caller treats them as unsupported rather than
+// falling back to a guess.
+func normalizeCatalogType(declared string) (string, bool) {
+	compact := strings.ToLower(strings.TrimSpace(declared))
+	compact = strings.NewReplacer("-", "", "_", "", " ", "").Replace(compact)
+	switch compact {
+	case "chat", "llm", "completion", "completions", "chatcompletion", "chatcompletions",
+		"textgeneration":
+		return CatalogTypeChat, true
+	case "embedding", "embeddings", "embed", "textembedding":
+		return CatalogTypeEmbedding, true
+	case "rerank", "reranker", "reranking", "rank":
+		return CatalogTypeRerank, true
+	case "asr", "audio", "transcription", "speechtotext":
+		return CatalogTypeASR, true
+	case "vlm", "vision", "multimodal", "video", "videos":
+		return CatalogTypeVLM, true
+	default:
+		return "", false
+	}
+}
+
+// catalogVision resolves the declared input modalities. known is false when the
+// gateway omits architecture altogether, so callers can tell "text-only" apart
+// from "not declared". Older payloads only carry modality ("text+image->text"),
+// so the input side is read from it.
+func catalogVision(modality string, inputs []string) (supports, known bool) {
+	if len(inputs) == 0 {
+		if in, _, found := strings.Cut(modality, "->"); found {
+			inputs = strings.Split(in, "+")
+		}
+	}
+	if len(inputs) == 0 {
+		return false, false
+	}
+	for _, m := range inputs {
+		if strings.EqualFold(strings.TrimSpace(m), "image") {
+			return true, true
+		}
+	}
+	return false, true
+}
+
+// catalogAvailability maps orion.availability onto the entry flag. Only values
+// that explicitly deny service mark a model unavailable: an absent or
+// unrecognised vocabulary must not prune rows, because the synchroniser treats
+// unavailable entries as deleted.
+func catalogAvailability(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "unavailable", "notavailable", "disabled", "offline", "down", "error", "failed":
+		return false
+	default:
+		return true
+	}
+}
+
 // InferModelType mirrors Orion's own probe-import heuristic
-// (shared/model.rs infer_model_type) so gateway entries land in the same
-// buckets Orion's console catalogue would have reported explicitly.
+// (shared/model.rs infer_model_type). It is the fallback for gateway entries
+// that carry no model_type, so pre-metadata deployments still land in the same
+// buckets Orion's console catalogue would have reported.
 func InferModelType(modelName string) string {
 	name := strings.ToLower(modelName)
 	switch {
@@ -209,7 +327,9 @@ func (c *HTTPModelCatalog) doJSON(
 	}
 	// Orion accepts the License SK via NS-APIKEY (Authorization: Bearer works
 	// too, but the dedicated header cannot collide with a proxied upstream).
-	req.Header.Set("NS-APIKEY", apiKey)
+	// The key also goes out as NS-SK so Orion's rename of that header never
+	// needs a matching change here.
+	setAPIKeyHeaders(req, apiKey)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

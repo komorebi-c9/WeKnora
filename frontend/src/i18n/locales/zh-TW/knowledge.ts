@@ -361,6 +361,7 @@ export default {
       embeddingDesc: '用於文字向量化的內嵌模型',
       embeddingPlaceholder: '請選擇 Embedding 模型',
       embeddingLocked: '知識庫中已有檔案，無法修改 Embedding 模型',
+      embeddingMissing: '目前嵌入模型已不存在，請重新選擇；儲存後將重建索引',
       embeddingOptional: '（可選）',
       embeddingWikiOptionalDesc: '可選。設定後用於 Wiki 目錄歸類的相似度比對，讓新頁面更好地復用已有目錄；不設定則按完整目錄樹歸類。'
     },

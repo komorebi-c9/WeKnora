@@ -975,7 +975,9 @@ type PatchKnowledgeBaseRequest struct {
 	Name *string `json:"name" extensions:"x-agent"`
 	// New description. Omit to keep it; an empty string clears it.
 	Description *string `json:"description" extensions:"x-agent"`
-	// Embedding model. Cannot change after the knowledge base has documents.
+	// Embedding model. Cannot change after the knowledge base has documents,
+	// unless the current model no longer resolves; that switch rebuilds the
+	// index of every document.
 	EmbeddingModelID *string `json:"embedding_model_id" extensions:"x-agent=embedding_model_id"`
 	// Summary model. model.list returns the ids.
 	SummaryModelID *string `json:"summary_model_id" extensions:"x-agent=summary_model_id"`
@@ -1259,7 +1261,7 @@ func fillOmittedIndexingFlags(raw []byte, kb *types.KnowledgeBase) {
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @x-agent      {"id":"knowledge_base.update","risk":"write","target":"knowledge_base.get","label":"name"}
-// @x-agent-hint "Changes the settings you send; a field left out is kept, including one indexing flag or one chunking field. Model ids come from model.list. embedding_model_id cannot change after documents exist. vector_store_id cannot be changed. Parsing settings (strategy, enable_parent_child, parent_chunk_size, child_chunk_size, VLM/ASR and question_generation_enabled/question_count) affect future parses; existing documents need an explicit knowledge.reparse or knowledge.batch_reparse. Read current settings first. For parser routing send parser_file_types and parser_engine from knowledge_base.list_parser_engines; empty parser_engine restores defaults. Use image_pipeline=smartocr for adaptive OCR, or default plus image_caption_enabled/image_ocr_enabled for manual image processing. Graph node types stay in the knowledge base editor."
+// @x-agent-hint "Changes the settings you send; a field left out is kept, including one indexing flag or one chunking field. Model ids come from model.list. embedding_model_id cannot change after documents exist, unless the current embedding model no longer resolves (deleted or hidden by the model source) — that switch is accepted and rebuilds the index of every document. vector_store_id cannot be changed. Parsing settings (strategy, enable_parent_child, parent_chunk_size, child_chunk_size, VLM/ASR and question_generation_enabled/question_count) affect future parses; existing documents need an explicit knowledge.reparse or knowledge.batch_reparse. Read current settings first. For parser routing send parser_file_types and parser_engine from knowledge_base.list_parser_engines; empty parser_engine restores defaults. Use image_pipeline=smartocr for adaptive OCR, or default plus image_caption_enabled/image_ocr_enabled for manual image processing. Graph node types stay in the knowledge base editor."
 // @Router       /knowledge-bases/{id} [patch]
 func (h *KnowledgeBaseHandler) PatchKnowledgeBase(c *gin.Context) {
 	ctx := c.Request.Context()

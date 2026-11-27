@@ -118,6 +118,16 @@ func NewServer(
 	s.handler = server.NewStreamableHTTPServer(
 		s.mcp,
 		server.WithStateLess(true),
+		// mcp-go enables DNS-rebinding protection for transports reached over a
+		// loopback connection: any request whose Host header is not loopback is
+		// rejected with 403. Behind our own gateways that is always the case —
+		// nginx (all-in-one image) and the Orion gateway keep the public Host
+		// while connecting to the app on 127.0.0.1 — so every remote client was
+		// refused "Forbidden: invalid Host header <host>". The guard only makes
+		// sense for an unauthenticated local-only server; this surface is
+		// public and every request is already authenticated by
+		// middleware.MCPEndpointAuth, so disable it here.
+		server.WithDisableLocalhostProtection(true),
 	)
 	return s
 }

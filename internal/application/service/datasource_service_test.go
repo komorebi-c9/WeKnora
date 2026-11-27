@@ -98,6 +98,8 @@ func (s *processSyncKBService) UpdateKnowledgeBase(
 ) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
+
+func (s *processSyncKBService) RebuildEmbeddingIndex(context.Context, string) error { return nil }
 func (s *processSyncKBService) DeleteKnowledgeBase(context.Context, string) error { return nil }
 func (s *processSyncKBService) TogglePinKnowledgeBase(context.Context, string) (*types.KnowledgeBase, error) {
 	return nil, nil

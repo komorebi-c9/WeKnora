@@ -1,5 +1,6 @@
 import { post, get, put } from '@/utils/request'
 import i18n from '@/i18n'
+import type { OrionCredential } from '@/utils/orionAssertion'
 
 const t = (key: string) => i18n.global.t(key)
 
@@ -301,13 +302,21 @@ export async function getAuthConfig(): Promise<AuthConfigResponse> {
  * 用 Orion 凭据换取 WeKnora 会话。
  *
  * 浏览器无法给普通链接附加自定义请求头，因此这里发同源请求，让浏览器
- * 自动携带 Orion 下发的 NS-TOKEN Cookie；服务端同时接受 NS-TOKEN 请求头，
- * 供反向代理等场景使用。
+ * 自动携带 Orion 下发的 NS-TOKEN / NS-APIKEY Cookie；服务端同时接受这两种
+ * 请求头，供反向代理等场景使用。
+ *
+ * 两种凭据都支持：会话凭据走 NS-TOKEN，License SK（sk-...）走 NS-APIKEY。
+ * 两者同时存在时都发出去，由服务端保证“有 token 就用 token，没有才用 SK”。
+ * 服务端对 SK 的头部名同时接受 NS-APIKEY 与 NS-SK（Orion 正在改名），这里
+ * 只需发一个，用历史名保持与旧网关的兼容。
  *
  * 失败时抛出异常（含 HTTP 状态码），由调用方决定落到提示页还是登录页。
  */
-export async function exchangeOrionToken(assertion?: string): Promise<LoginResponse> {
-  const config = assertion ? { headers: { 'NS-TOKEN': assertion } } : undefined
+export async function exchangeOrionToken(credential?: OrionCredential): Promise<LoginResponse> {
+  const headers: Record<string, string> = {}
+  if (credential?.token) headers['NS-TOKEN'] = credential.token
+  if (credential?.apiKey) headers['NS-APIKEY'] = credential.apiKey
+  const config = Object.keys(headers).length > 0 ? { headers } : undefined
   const response = await post('/api/v1/auth/orion/exchange', {}, config)
   return response as unknown as LoginResponse
 }

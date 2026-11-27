@@ -615,6 +615,10 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 
 	changedFields := make([]string, 0, 3)
 	profileWasEnabled := kb.ProfileConfig.IsEnabled()
+	// Set when the embedding model changed on a knowledge base whose previous
+	// model no longer resolves: the stored vectors are unusable, so every
+	// document has to be re-embedded with the new model.
+	rebuildEmbeddingIndex := false
 	if kb.Name != name {
 		changedFields = append(changedFields, "name")
 	}
@@ -679,9 +683,11 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		if config.EmbeddingModelID != nil {
 			next := strings.TrimSpace(*config.EmbeddingModelID)
 			if next != kb.EmbeddingModelID {
-				if err := s.rejectEmbeddingModelChange(ctx, kb, next); err != nil {
+				rebuild, err := s.rejectEmbeddingModelChange(ctx, kb, next)
+				if err != nil {
 					return nil, err
 				}
+				rebuildEmbeddingIndex = rebuild
 				changedFields = append(changedFields, "embedding_model_id")
 				kb.EmbeddingModelID = next
 			}
@@ -751,6 +757,20 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		"knowledge_base", kb.ID, types.AuditOutcomeSuccess, map[string]any{
 			"name": kb.Name, "changed_fields": changedFields,
 		})
+	// The model is persisted by now; rebuilding is a follow-up job. If it cannot
+	// be scheduled the knowledge base keeps working for new documents but the
+	// existing ones are still unindexed, so say it explicitly instead of
+	// returning a success the operator would not notice.
+	if rebuildEmbeddingIndex {
+		if err := s.enqueueEmbeddingRebuild(ctx, kb); err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"knowledge_base_id":  kb.ID,
+				"embedding_model_id": kb.EmbeddingModelID,
+			})
+			return kb, apperrors.NewInternalServerError(
+				"embedding model was updated but the index rebuild could not be scheduled; retry with rebuild-index")
+		}
+	}
 	// Turning automatic description generation on should produce a
 	// description now, not after the next upload.
 	if !profileWasEnabled && kb.ProfileConfig.IsEnabled() {
@@ -794,26 +814,137 @@ func (s *knowledgeBaseService) updateStorageBackend(
 	return true, nil
 }
 
+// rejectEmbeddingModelChange validates a new embedding model and reports
+// whether the knowledge base has to be re-indexed after the switch.
+//
+// Documents pin the vectors they were indexed with, so a switch while files
+// exist is refused: the new model's dimension and space would silently diverge
+// from the stored vectors. The one exception is a model that can no longer be
+// resolved at all (the catalogue rotated, the row was soft-deleted, or Orion
+// mode hides it). In that state the knowledge base is already broken — parsing
+// fails with "model not found" and no document can be added — so refusing would
+// trap the workspace with no way out. The caller then rebuilds every document
+// with the new model.
 func (s *knowledgeBaseService) rejectEmbeddingModelChange(
 	ctx context.Context, kb *types.KnowledgeBase, next string,
-) error {
+) (bool, error) {
 	if next == "" {
-		return apperrors.NewBadRequestError("embedding_model_id cannot be empty")
+		return false, apperrors.NewBadRequestError("embedding_model_id cannot be empty")
 	}
 	if err := s.requireModelType(ctx, next, types.ModelTypeEmbedding, "embedding_model_id"); err != nil {
-		return err
+		return false, err
 	}
 	if kb.EmbeddingModelID == "" {
+		return false, nil
+	}
+	total, err := s.kgRepo.CountKnowledgeByKnowledgeBaseID(ctx, kb.TenantID, kb.ID)
+	if err != nil {
+		return false, err
+	}
+	if total == 0 {
+		return false, nil
+	}
+	if !EmbeddingModelUnresolvable(ctx, s.modelService, kb.EmbeddingModelID) {
+		return false, apperrors.NewBadRequestError("知识库中已有文件，无法修改Embedding模型")
+	}
+	logger.Warnf(ctx,
+		"knowledge base %s: embedding model %q is no longer available; allowing the switch to %q and rebuilding the index",
+		kb.ID, kb.EmbeddingModelID, next)
+	return true, nil
+}
+
+// EmbeddingModelUnresolvable reports whether the knowledge base's current
+// embedding model can no longer be loaded. A nil model service cannot prove
+// that, so it reports false and keeps the conservative rule. Both the KB update
+// and the initialization config endpoint use it so their switch rules agree.
+func EmbeddingModelUnresolvable(ctx context.Context, models interfaces.ModelService, modelID string) bool {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return true
+	}
+	if models == nil {
+		return false
+	}
+	model, err := models.GetModelByID(ctx, modelID)
+	return err != nil || model == nil
+}
+
+// RebuildEmbeddingIndex re-parses every document of the knowledge base so its
+// vectors are regenerated with the embedding model now configured. It is the
+// recovery path after switching away from an unresolvable model.
+func (s *knowledgeBaseService) RebuildEmbeddingIndex(ctx context.Context, id string) error {
+	kb, err := s.repo.GetKnowledgeBaseByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("load knowledge base %s for embedding rebuild: %w", id, err)
+	}
+	if kb == nil {
+		return fmt.Errorf("knowledge base %s not found", id)
+	}
+	return s.enqueueEmbeddingRebuild(ctx, kb)
+}
+
+// embeddingRebuildBatch caps one knowledge:list_reparse payload. Mirrors the
+// per-task admission cap of /knowledge/batch-reparse.
+const embeddingRebuildBatch = 200
+
+// enqueueEmbeddingRebuild submits every document of the knowledge base for a
+// re-parse, which re-embeds it with the model the caller just selected.
+func (s *knowledgeBaseService) enqueueEmbeddingRebuild(
+	ctx context.Context, kb *types.KnowledgeBase,
+) error {
+	if s.asynqClient == nil || s.kgRepo == nil {
 		return nil
 	}
-	_, total, err := s.kgRepo.ListPagedKnowledgeByKnowledgeBaseID(ctx, kb.TenantID, kb.ID,
-		&types.Pagination{Page: 1, PageSize: 1}, types.KnowledgeListFilter{})
+	knowledges, err := s.kgRepo.ListKnowledgeByKnowledgeBaseID(ctx, kb.TenantID, kb.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("list knowledge: %w", err)
 	}
-	if total > 0 {
-		return apperrors.NewBadRequestError("知识库中已有文件，无法修改Embedding模型")
+	ids := make([]string, 0, len(knowledges))
+	for _, knowledge := range knowledges {
+		if knowledge == nil || strings.TrimSpace(knowledge.ID) == "" {
+			continue
+		}
+		// A document mid-move is already being rebuilt by the transfer; skipping
+		// it is better than failing the whole switch. Any other metadata problem
+		// must not cost the document its re-embedding.
+		if err := access.RejectMovingKnowledge(knowledge); err != nil {
+			if appErr, ok := apperrors.IsAppError(err); ok && appErr.Code == apperrors.ErrConflict {
+				logger.Warnf(ctx,
+					"rebuild after embedding model change: skipping knowledge %s: %v",
+					knowledge.ID, err)
+				continue
+			}
+		}
+		ids = append(ids, knowledge.ID)
 	}
+	if len(ids) == 0 {
+		return nil
+	}
+	for start := 0; start < len(ids); start += embeddingRebuildBatch {
+		end := start + embeddingRebuildBatch
+		if end > len(ids) {
+			end = len(ids)
+		}
+		payload := types.KnowledgeListReparsePayload{
+			KnowledgeBaseID: kb.ID,
+			TenantID:        kb.TenantID,
+			KnowledgeIDs:    ids[start:end],
+			Initiator:       types.TaskInitiatorFromContext(ctx),
+		}
+		langfuse.InjectTracing(ctx, &payload)
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal reparse payload: %w", err)
+		}
+		task := asynq.NewTask(types.TypeKnowledgeListReparse, raw,
+			asynq.Queue(types.QueueMaintenance), asynq.MaxRetry(3), asynq.Timeout(time.Hour))
+		if _, err := s.asynqClient.Enqueue(task); err != nil {
+			return fmt.Errorf("enqueue reparse task: %w", err)
+		}
+	}
+	logger.Infof(ctx,
+		"knowledge base %s: enqueued an index rebuild for %d documents after the embedding model change",
+		kb.ID, len(ids))
 	return nil
 }
 

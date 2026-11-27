@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
 	"github.com/Tencent/WeKnora/internal/assets"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -283,7 +284,10 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		return
 	}
 
-	// 检查Embedding模型是否可以修改
+	// 检查Embedding模型是否可以修改。有文件时按 KB 更新接口同一策略：旧模型
+	// 仍可解析则拒绝；旧模型已不可解析时知识库本身已不可用，放行切换并在保存
+	// 后重建索引，避免把工作空间困死在坏配置里。
+	embeddingRebuildRequired := false
 	if kb.EmbeddingModelID != "" && req.EmbeddingModelID != "" && kb.EmbeddingModelID != req.EmbeddingModelID {
 		// 检查是否已有文件
 		knowledgeList, err := h.knowledgeService.ListPagedKnowledgeByKnowledgeBaseID(ctx,
@@ -292,9 +296,15 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 				PageSize: 1,
 			}, types.KnowledgeListFilter{})
 		if err == nil && knowledgeList != nil && knowledgeList.Total > 0 {
-			logger.Error(ctx, "Cannot change embedding model when files exist")
-			c.Error(errors.NewBadRequestError("知识库中已有文件，无法修改Embedding模型"))
-			return
+			if !service.EmbeddingModelUnresolvable(ctx, h.modelService, kb.EmbeddingModelID) {
+				logger.Error(ctx, "Cannot change embedding model when files exist")
+				c.Error(errors.NewBadRequestError("知识库中已有文件，无法修改Embedding模型"))
+				return
+			}
+			logger.Warnf(ctx,
+				"knowledge base %s: embedding model %q is no longer available; allowing the switch to %q and rebuilding the index",
+				kbIdStr, kb.EmbeddingModelID, req.EmbeddingModelID)
+			embeddingRebuildRequired = true
 		}
 	}
 
@@ -518,6 +528,19 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		logger.Error(ctx, "Failed to update knowledge base", err)
 		c.Error(errors.NewInternalServerError("更新知识库失败: " + err.Error()))
 		return
+	}
+
+	// 旧嵌入模型已失效时的切换必须重建索引，否则存量文档的向量仍属于旧模型。
+	if embeddingRebuildRequired {
+		if err := h.kbService.RebuildEmbeddingIndex(ctx, kb.ID); err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"knowledge_base_id":  kb.ID,
+				"embedding_model_id": kb.EmbeddingModelID,
+			})
+			c.Error(errors.NewInternalServerError(
+				"embedding model was updated but the index rebuild could not be scheduled; retry with rebuild-index"))
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

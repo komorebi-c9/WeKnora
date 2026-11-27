@@ -1429,6 +1429,7 @@ export default {
       embeddingDesc: 'テキストのベクトル化に使用する埋め込みモデル',
       embeddingPlaceholder: '埋め込みモデルを選択',
       embeddingLocked: 'ナレッジベースに既にファイルがあるため、埋め込みモデルは変更できません',
+      embeddingMissing: '現在の埋め込みモデルは存在しません。再選択してください。保存後にインデックスを再構築します。',
       embeddingOptional: '（任意）',
       embeddingWikiOptionalDesc: '任意。設定すると、Wikiのディレクトリ分類における類似度マッチングに使用され、新しいページが既存のフォルダをより適切に再利用できます。未設定の場合はディレクトリツリー全体が使用されます。'
     },
